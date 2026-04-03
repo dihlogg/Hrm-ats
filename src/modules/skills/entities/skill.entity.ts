@@ -1,6 +1,6 @@
-import { BaseEntities } from 'src/common/entities/base.entity';
-import { EntitySkill } from 'src/modules/entity-skills/entities/entity-skill.entity';
 import { Column, Entity, OneToMany } from 'typeorm';
+import { EntitySkill } from '../../entity-skills/entities/entity-skill.entity';
+import { BaseEntities } from '../../../common/entities/base.entity';
 
 @Entity('Skills')
 export class Skill extends BaseEntities {

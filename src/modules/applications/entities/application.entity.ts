@@ -1,7 +1,7 @@
-import { BaseEntities } from 'src/common/entities/base.entity';
-import { Candidate } from 'src/modules/candidates/entities/candidate.entity';
-import { Job } from 'src/modules/jobs/entities/job.entity';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { BaseEntities } from '../../../common/entities/base.entity';
+import { Candidate } from '../../candidates/entities/candidate.entity';
+import { Job } from '../../jobs/entities/job.entity';
 
 @Entity('Applications')
 export class Application extends BaseEntities {

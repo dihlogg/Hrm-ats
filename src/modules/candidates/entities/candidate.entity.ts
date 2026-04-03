@@ -1,7 +1,7 @@
-import { BaseEntities } from 'src/common/entities/base.entity';
-import { Application } from 'src/modules/applications/entities/application.entity';
-import { EntitySkill } from 'src/modules/entity-skills/entities/entity-skill.entity';
 import { Column, Entity, OneToMany } from 'typeorm';
+import { BaseEntities } from '../../../common/entities/base.entity';
+import { EntitySkill } from '../../entity-skills/entities/entity-skill.entity';
+import { Application } from '../../applications/entities/application.entity';
 
 @Entity('Candidates')
 export class Candidate extends BaseEntities {
