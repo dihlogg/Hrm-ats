@@ -6,10 +6,16 @@ export class CreateJobDto {
   employeeId?: string;
 
   @ApiProperty()
-  title: string;
+  jobTitleId?: string;
 
-  @ApiPropertyOptional()
-  subtitle?: string;
+  @ApiProperty()
+  jobTitleName?: string;
+
+  @ApiProperty()
+  subUnitId?: string;
+
+  @ApiProperty()
+  subUnitName?: string;
 
   @ApiPropertyOptional()
   fromDate?: Date;
@@ -28,6 +34,9 @@ export class CreateJobDto {
 
   @ApiPropertyOptional()
   description?: string;
+
+  @ApiPropertyOptional()
+  requirements?: string;
 
   @ApiPropertyOptional()
   responsibilities?: string;

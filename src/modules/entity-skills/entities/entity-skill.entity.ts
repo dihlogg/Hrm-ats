@@ -1,8 +1,8 @@
-import { BaseEntities } from 'src/common/entities/base.entity';
-import { Candidate } from 'src/modules/candidates/entities/candidate.entity';
-import { Job } from 'src/modules/jobs/entities/job.entity';
-import { Skill } from 'src/modules/skills/entities/skill.entity';
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import { Skill } from '../../skills/entities/skill.entity';
+import { BaseEntities } from '../../../common/entities/base.entity';
+import { Job } from '../../jobs/entities/job.entity';
+import { Candidate } from '../../candidates/entities/candidate.entity';
 
 @Entity('EntitySkills')
 export class EntitySkill extends BaseEntities {
