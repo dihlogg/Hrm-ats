@@ -21,6 +21,9 @@ export class Candidate extends BaseEntities {
   summary: string;
 
   @Column({ nullable: true })
+  profileUrl: string;
+
+  @Column({ nullable: true })
   cvFileUrl: string;
 
   @Column({ nullable: true })

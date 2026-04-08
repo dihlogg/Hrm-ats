@@ -16,6 +16,9 @@ export class Application extends BaseEntities {
   @Column()
   status: string;
 
+  @Column('text', { nullable: true })
+  coverLetter: string;
+
   @Column('jsonb', { nullable: true })
   jobSnapshotJson: any;
 
