@@ -50,6 +50,9 @@ export class Job extends BaseEntities {
   @Column({ nullable: true })
   location: string;
 
+  @Column({ nullable: true })
+  level: string;
+
   @Column('text', { nullable: true })
   description: string;
 

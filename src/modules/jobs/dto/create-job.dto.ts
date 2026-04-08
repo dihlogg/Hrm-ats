@@ -33,6 +33,9 @@ export class CreateJobDto {
   location?: string;
 
   @ApiPropertyOptional()
+  level?: string;
+
+  @ApiPropertyOptional()
   description?: string;
 
   @ApiPropertyOptional()

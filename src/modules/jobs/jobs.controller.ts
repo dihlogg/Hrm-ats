@@ -6,11 +6,14 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { JobsService } from './jobs.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { ApiTags } from '@nestjs/swagger';
+import { PaginationDto } from '../../utils/pagination/pagination.dto';
+import { GetJobListDto } from './dto/get-job-list.dto';
 
 @ApiTags('Jobs')
 @Controller('jobs')
@@ -19,8 +22,17 @@ export class JobsController {
 
   //get all jobs
   @Get('GetAllJobs')
-  async findAll() {
-    return await this.jobsService.findAll();
+  async findAll(@Query() paginationDto: PaginationDto) {
+    return await this.jobsService.findAll(paginationDto);
+  }
+
+  //get jobs by level
+  @Get('GetJobsByLevel/:level')
+  async findByLevel(
+    @Param('level') level: string,
+    @Query() paginationDto: PaginationDto,
+  ) {
+    return await this.jobsService.findByLevel(level, paginationDto);
   }
 
   //get job by id
@@ -45,5 +57,11 @@ export class JobsController {
   @Delete('DeleteJob/:id')
   async delete(@Param('id') id: string) {
     return await this.jobsService.delete(id);
+  }
+
+  //get job list with pagination
+  @Get('GetJobList')
+  async getJobList(@Query() query: GetJobListDto) {
+    return await this.jobsService.getJobList(query);
   }
 }
