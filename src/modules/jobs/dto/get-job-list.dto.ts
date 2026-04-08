@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from '../../../utils/pagination/pagination.dto';
+import { EmploymentType } from '../entities/job.entity';
 
 export class GetJobListDto extends PaginationDto {
   @ApiPropertyOptional({
@@ -30,4 +31,7 @@ export class GetJobListDto extends PaginationDto {
   @IsOptional()
   @IsString()
   location?: string;
+
+  @IsOptional()
+  employmentType?: EmploymentType;
 }
