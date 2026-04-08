@@ -80,7 +80,7 @@ export class JobsService {
   }
 
   private applyFilters(query: SelectQueryBuilder<Job>, dto: GetJobListDto) {
-    const { keyword, level, jobTitleName, location } = dto;
+    const { keyword, level, jobTitleName, location, employmentType } = dto;
 
     if (keyword) {
       query.andWhere('job.title ILIKE :keyword', {
@@ -89,9 +89,14 @@ export class JobsService {
     }
 
     if (level) {
-      query.andWhere('job.level ILIKE :level', {
-        level: `%${level.trim()}%`,
-      });
+      const levelArray = level
+        .split(',')
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (levelArray.length > 0) {
+        query.andWhere('job.level IN (:...levelArray)', { levelArray });
+      }
     }
 
     if (jobTitleName) {
@@ -103,6 +108,12 @@ export class JobsService {
     if (location) {
       query.andWhere('job.location ILIKE :location', {
         location: `%${location.trim()}%`,
+      });
+    }
+
+    if (employmentType) {
+      query.andWhere('job.employmentType = :employmentType', {
+        employmentType,
       });
     }
 
