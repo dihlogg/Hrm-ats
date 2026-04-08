@@ -3,7 +3,10 @@ import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from './entities/job.entity';
-import { Not, Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
+import { PaginationDto } from '../../utils/pagination/pagination.dto';
+import { paginateAndFormat } from '../../utils/pagination/pagination.util';
+import { GetJobListDto } from './dto/get-job-list.dto';
 
 @Injectable()
 export class JobsService {
@@ -13,11 +16,25 @@ export class JobsService {
     return this.repo.save(job);
   }
 
-  async findAll(): Promise<Job[]> {
-    return await this.repo.find({
-      order: {
-        createDate: 'ASC',
-      },
+  async findAll(paginationDto: PaginationDto) {
+    const page = Number(paginationDto.page) || 1;
+    const pageSize = Number(paginationDto.pageSize) || 10;
+
+    return paginateAndFormat(this.repo, {
+      page,
+      pageSize,
+      findOptions: { order: { createDate: 'ASC' } },
+    });
+  }
+
+  async findByLevel(level: string, paginationDto: PaginationDto) {
+    const page = Number(paginationDto.page) || 1;
+    const pageSize = Number(paginationDto.pageSize) || 10;
+
+    return paginateAndFormat(this.repo, {
+      page,
+      pageSize,
+      findOptions: { where: { level }, order: { createDate: 'ASC' } },
     });
   }
 
@@ -34,6 +51,7 @@ export class JobsService {
     if (!updateJob) {
       throw new NotFoundException(`Job not found`);
     }
+    await this.repo.update(id, updateJobDto);
     return true;
   }
 
@@ -43,5 +61,70 @@ export class JobsService {
       throw new NotFoundException(`Job not found`);
     }
     return true;
+  }
+
+  async getJobList(dto: GetJobListDto) {
+    const { page = 1, pageSize = 10 } = dto;
+
+    let query = this.repo.createQueryBuilder('job');
+
+    query = this.applyFilters(query, dto);
+    query = this.applySorting(query, dto);
+
+    return paginateAndFormat(query, {
+      page: Number(page),
+      pageSize: Number(pageSize),
+      useQueryBuilder: true,
+      queryBuilder: query,
+    });
+  }
+
+  private applyFilters(query: SelectQueryBuilder<Job>, dto: GetJobListDto) {
+    const { keyword, level, jobTitleName, location } = dto;
+
+    if (keyword) {
+      query.andWhere('job.title ILIKE :keyword', {
+        keyword: `%${keyword.trim()}%`,
+      });
+    }
+
+    if (level) {
+      query.andWhere('job.level ILIKE :level', {
+        level: `%${level.trim()}%`,
+      });
+    }
+
+    if (jobTitleName) {
+      query.andWhere('job.jobTitleName ILIKE :jobTitleName', {
+        jobTitleName: `%${jobTitleName.trim()}%`,
+      });
+    }
+
+    if (location) {
+      query.andWhere('job.location ILIKE :location', {
+        location: `%${location.trim()}%`,
+      });
+    }
+
+    return query;
+  }
+
+  private applySorting(query: SelectQueryBuilder<Job>, dto: GetJobListDto) {
+    const sortFieldMap: Record<string, string> = {
+      title: 'job.title',
+      jobTitleName: 'job.jobTitleName',
+      level: 'job.level',
+      location: 'job.location',
+      createDate: 'job.createDate',
+    };
+
+    if (!dto.sortBy || !dto.sortOrder) {
+      return query.orderBy('job.createDate', 'DESC');
+    }
+
+    const sortField = sortFieldMap[dto.sortBy];
+    const sortOrder = dto.sortOrder;
+
+    return query.orderBy(sortField, sortOrder);
   }
 }
