@@ -1,34 +1,26 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { ApplicationsService } from './applications.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
-import { UpdateApplicationDto } from './dto/update-application.dto';
+import { ApiOperation, ApiQuery } from '@nestjs/swagger';
 
 @Controller('applications')
 export class ApplicationsController {
   constructor(private readonly applicationsService: ApplicationsService) {}
 
-  @Post()
-  create(@Body() createApplicationDto: CreateApplicationDto) {
-    return this.applicationsService.create(createApplicationDto);
+  @Get('presigned-url')
+  @ApiOperation({ summary: 'Get presigned URL for CV upload' })
+  @ApiQuery({ name: 'fileName', example: 'my-cv.pdf' })
+  @ApiQuery({ name: 'contentType', example: 'application/pdf' })
+  async getPresignedUrl(
+    @Query('fileName') fileName: string,
+    @Query('contentType') contentType: string,
+  ) {
+    return this.applicationsService.getPresignedUrl(fileName, contentType);
   }
 
-  @Get()
-  findAll() {
-    return this.applicationsService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.applicationsService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateApplicationDto: UpdateApplicationDto) {
-    return this.applicationsService.update(+id, updateApplicationDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.applicationsService.remove(+id);
+  @Post('apply')
+  @ApiOperation({ summary: 'Submit job application' })
+  async apply(@Body() createApplicationDto: CreateApplicationDto) {
+    return this.applicationsService.applyJob(createApplicationDto);
   }
 }
