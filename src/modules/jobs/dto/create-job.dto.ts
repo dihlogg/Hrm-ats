@@ -49,4 +49,11 @@ export class CreateJobDto {
 
   @ApiPropertyOptional({ enum: JobStatus, default: JobStatus.OPEN })
   status?: JobStatus;
+
+  skills?: {
+    skillId?: string;
+    skillName: string;
+    experienceYears?: number;
+    standardizedName?: string;
+  }[];
 }

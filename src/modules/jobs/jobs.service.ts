@@ -1,21 +1,67 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from './entities/job.entity';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { PaginationDto } from '../../utils/pagination/pagination.dto';
 import { paginateAndFormat } from '../../utils/pagination/pagination.util';
 import { GetJobListDto } from './dto/get-job-list.dto';
+import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
 
 @Injectable()
 export class JobsService {
-  constructor(@InjectRepository(Job) private repo: Repository<Job>) {}
+  constructor(
+    @InjectRepository(Job) private repo: Repository<Job>,
+    private dataSource: DataSource,
+  ) {}
+  // async create(createJobDto: CreateJobDto): Promise<Job> {
+  //   const job = this.repo.create(createJobDto);
+  //   return this.repo.save(job);
+  // }
   async create(createJobDto: CreateJobDto): Promise<Job> {
-    const job = this.repo.create(createJobDto);
-    return this.repo.save(job);
-  }
+    const queryRunner = this.dataSource.createQueryRunner();
 
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const { skills, ...jobData } = createJobDto;
+
+      const job = queryRunner.manager.create(Job, jobData);
+      const savedJob = await queryRunner.manager.save(job);
+
+      if (skills && skills.length > 0) {
+        for (const skillItem of skills) {
+          if (!skillItem.skillId) {
+            throw new BadRequestException(
+              `Yêu cầu cung cấp skillId cho kỹ năng: ${skillItem.skillName}. Kỹ năng phải được chọn từ danh sách có sẵn.`,
+            );
+          }
+          const entitySkill = queryRunner.manager.create(EntitySkill, {
+            job: { id: savedJob.id },
+            skill: { id: skillItem.skillId },
+            experienceYears: skillItem.experienceYears,
+            standardizedName: skillItem.standardizedName || skillItem.skillName,
+          });
+
+          await queryRunner.manager.save(entitySkill);
+        }
+      }
+
+      await queryRunner.commitTransaction();
+      return savedJob;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
   async findAll(paginationDto: PaginationDto) {
     const page = Number(paginationDto.page) || 1;
     const pageSize = Number(paginationDto.pageSize) || 10;
@@ -39,7 +85,10 @@ export class JobsService {
   }
 
   async findOne(id: string): Promise<Job> {
-    const job = await this.repo.findOne({ where: { id } });
+    const job = await this.repo.findOne({
+      where: { id },
+      relations: ['entitySkills', 'entitySkills.skill'],
+    });
     if (!job) {
       throw new NotFoundException(`Job not found`);
     }
