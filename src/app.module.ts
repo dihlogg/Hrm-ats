@@ -8,6 +8,7 @@ import { CandidatesModule } from './modules/candidates/candidates.module';
 import { SkillsModule } from './modules/skills/skills.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { EntitySkillsModule } from './modules/entity-skills/entity-skills.module';
+import { KafkaModule } from './kafka/kafka.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { EntitySkillsModule } from './modules/entity-skills/entity-skills.module
     SkillsModule,
     ApplicationsModule,
     EntitySkillsModule,
+    KafkaModule
   ],
   controllers: [AppController],
   providers: [AppService],
