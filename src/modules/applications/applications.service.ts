@@ -9,12 +9,15 @@ import { MinioService } from '../../infrastructure/minio/minio.service';
 import { Candidate } from '../candidates/entities/candidate.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Application } from './entities/application.entity';
+import { ProducerService } from '../../kafka/producers/producer.service';
+import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
 
 @Injectable()
 export class ApplicationsService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly minioService: MinioService,
+    private readonly producerService: ProducerService,
   ) {}
 
   // api get presigned url upload cv to minio
@@ -32,7 +35,7 @@ export class ApplicationsService {
         where: { id: dto.jobId },
       });
       if (!job) {
-        throw new NotFoundException('Job không tồn tại!');
+        throw new NotFoundException('Job not found');
       }
 
       let candidate = await queryRunner.manager.findOne(Candidate, {
@@ -71,6 +74,16 @@ export class ApplicationsService {
       const savedApplication = await queryRunner.manager.save(application);
 
       await queryRunner.commitTransaction();
+
+      await this.producerService.produce(KAFKA_TOPICS.CV_PARSING_REQUEST, {
+        key: savedApplication.id,
+        value: JSON.stringify({
+          applicationId: savedApplication.id,
+          candidateId: candidate.id,
+          jobId: job.id,
+          storageKey: dto.storageKey,
+        }),
+      });
       return savedApplication;
     } catch (error: any) {
       await queryRunner.rollbackTransaction();

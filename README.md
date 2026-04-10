@@ -31,6 +31,20 @@
 $ npm install
 ```
 
+## Environment variables
+
+This service reads runtime configuration from environment variables.
+
+- `GEMINI_API_KEY`: Google AI Studio API key.
+- `GEMINI_MODEL`: Gemini model name (default: `gemini-2.5-flash`).
+
+Example values:
+
+```bash
+GEMINI_API_KEY=your_api_key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
 ## Compile and run the project
 
 ```bash
