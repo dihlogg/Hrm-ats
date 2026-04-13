@@ -20,7 +20,7 @@ export class ApplicationsService {
     private readonly producerService: ProducerService,
   ) {}
 
-  // api get presigned url upload cv to minio
+  // get presigned url upload cv to minio
   async getPresignedUrl(fileName: string, contentType: string) {
     return this.minioService.generatePresignedUrl(fileName, contentType);
   }

@@ -1,5 +1,10 @@
 import { Controller, Logger } from '@nestjs/common';
-import { Ctx, KafkaContext, MessagePattern, Payload } from '@nestjs/microservices';
+import {
+  Ctx,
+  KafkaContext,
+  MessagePattern,
+  Payload,
+} from '@nestjs/microservices';
 import { DataSource } from 'typeorm';
 import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
 import { retry } from '../../utils/retry';
@@ -10,7 +15,9 @@ import { Application } from './entities/application.entity';
 import { Candidate } from '../candidates/entities/candidate.entity';
 import { Skill } from '../skills/entities/skill.entity';
 import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
-const pdfParse: (buffer: Buffer) => Promise<{ text: string }> = require('pdf-parse');
+const pdfParse: (
+  buffer: Buffer,
+) => Promise<{ text: string }> = require('pdf-parse');
 
 @Controller()
 export class ApplicationsConsumerController {
@@ -25,12 +32,14 @@ export class ApplicationsConsumerController {
 
   // Clean (Token Optimization) function
   private cleanExtractedText(rawText: string): string {
-    return rawText
-      // Remove characters that are not letters, numbers, punctuation, or whitespace
-      .replace(/https?:\/\/[^\s]+/g, '')
-      .replace(/[^\w\s\p{L}\p{N}\p{P}]/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return (
+      rawText
+        // Remove characters that are not letters, numbers, punctuation, or whitespace
+        .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/[^\w\s\p{L}\p{N}\p{P}]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
   }
 
   @MessagePattern(KAFKA_TOPICS.CV_PARSING_REQUEST)
@@ -40,12 +49,14 @@ export class ApplicationsConsumerController {
 
     try {
       this.logger.log(`Received CV_PARSING_REQUEST: ${JSON.stringify(data)}`);
-      
+
       await retry(
         async () => {
           // read minio file
           this.logger.log(`Fetching PDF from MinIO: ${data.storageKey}`);
-          const pdfBuffer = await this.minioService.getFileBuffer(data.storageKey);
+          const pdfBuffer = await this.minioService.getFileBuffer(
+            data.storageKey,
+          );
 
           // text extraction
           this.logger.log('Extracting text from PDF');
@@ -57,13 +68,21 @@ export class ApplicationsConsumerController {
 
           // Integrate with LLM for parsing
           this.logger.log('Sending text to LLM for parsing');
-          const parsedData = await this.llmProviderService.parseCvToJson(rawText);
+          const parsedData =
+            await this.llmProviderService.parseCvToJson(rawText);
 
           // update db
           this.logger.log('Updating Database');
-          await this.processAndSaveData(data.applicationId, data.candidateId, rawText, parsedData);
-          
-          this.logger.log(`Successfully processed CV for Application ID: ${data.applicationId}`);
+          await this.processAndSaveData(
+            data.applicationId,
+            data.candidateId,
+            rawText,
+            parsedData,
+          );
+
+          this.logger.log(
+            `Successfully processed CV for Application ID: ${data.applicationId}`,
+          );
         },
         { retries: 3, initialDelay: 1000 },
       );
@@ -73,7 +92,12 @@ export class ApplicationsConsumerController {
     }
   }
 
-  private async processAndSaveData(applicationId: string, candidateId: string, rawText: string, parsedData: any) {
+  private async processAndSaveData(
+    applicationId: string,
+    candidateId: string,
+    rawText: string,
+    parsedData: any,
+  ) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -82,42 +106,55 @@ export class ApplicationsConsumerController {
       await queryRunner.manager.update(Candidate, candidateId, {
         rawCvText: rawText,
         summary: parsedData.summary,
-        metadata: { education: parsedData.education }
+        metadata: {
+          education: parsedData.education,
+          experience: parsedData.experience,
+        },
       });
-
       if (parsedData.skills && Array.isArray(parsedData.skills)) {
         for (const skillItem of parsedData.skills) {
-          let skill = await queryRunner.manager.findOne(Skill, {
-            where: { name: skillItem.standardizedName }
+          const skill = await queryRunner.manager.findOne(Skill, {
+            where: { name: skillItem.standardizedName },
           });
 
-          if (!skill) {
-            skill = queryRunner.manager.create(Skill, {
-              name: skillItem.standardizedName,
-              category: skillItem.category 
-            });
-            skill = await queryRunner.manager.save(skill);
+          let existingEntitySkill;
+          if (skill) {
+            existingEntitySkill = await queryRunner.manager.findOne(
+              EntitySkill,
+              {
+                where: {
+                  candidate: { id: candidateId },
+                  skill: { id: skill.id },
+                },
+              },
+            );
+          } else {
+            existingEntitySkill = await queryRunner.manager.findOne(
+              EntitySkill,
+              {
+                where: {
+                  candidate: { id: candidateId },
+                  standardizedName: skillItem.standardizedName,
+                },
+              },
+            );
           }
-
-          const existingEntitySkill = await queryRunner.manager.findOne(EntitySkill, {
-            where: { candidate: { id: candidateId }, skill: { id: skill.id } }
-          });
 
           if (!existingEntitySkill) {
             const newEntitySkill = queryRunner.manager.create(EntitySkill, {
               candidate: { id: candidateId },
-              skill: { id: skill.id },
+              skill: skill ? { id: skill.id } : undefined,
               experienceYears: skillItem.experienceYears,
-              standardizedName: skillItem.originalName
+              standardizedName:
+                skillItem.standardizedName || skillItem.originalName,
             });
             await queryRunner.manager.save(newEntitySkill);
           }
         }
       }
-
       await queryRunner.manager.update(Application, applicationId, {
         status: 'PARSED_SUCCESS',
-        rawData: JSON.stringify(parsedData)
+        rawData: JSON.stringify(parsedData),
       });
 
       await queryRunner.commitTransaction();
