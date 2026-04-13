@@ -6,7 +6,7 @@ import { Candidate } from '../../candidates/entities/candidate.entity';
 
 @Entity('EntitySkills')
 export class EntitySkill extends BaseEntities {
-  @ManyToOne(() => Skill, (skill) => skill.entitySkills)
+  @ManyToOne(() => Skill, (skill) => skill.entitySkills, { nullable: true})
   @JoinColumn({ name: 'skillId' })
   skill: Skill;
 
