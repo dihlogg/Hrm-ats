@@ -6,8 +6,8 @@ import { Transport, MicroserviceOptions } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
- const app = await NestFactory.create(AppModule);
- const configService = app.get(ConfigService);
+  const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
   app.enableCors({
     origin: true,
     credentials: true,
@@ -23,6 +23,8 @@ async function bootstrap() {
       },
       consumer: {
         groupId: 'hrm-ats-consumer-group',
+        rebalanceTimeout: 300000, // 5 minutes — matches sessionTimeout
+        heartbeatInterval: 10000,
       },
     },
   });

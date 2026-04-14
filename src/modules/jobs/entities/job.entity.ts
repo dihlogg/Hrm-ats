@@ -8,6 +8,13 @@ export enum JobStatus {
   CLOSED = 'CLOSED',
 }
 
+export enum SkillsExtractionStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+}
+
 export enum EmploymentType {
   FULL_TIME = 'FULL_TIME',
   PART_TIME = 'PART_TIME',
@@ -83,6 +90,13 @@ export class Job extends BaseEntities {
     default: JobStatus.OPEN,
   })
   status: JobStatus;
+
+  @Column({
+    type: 'enum',
+    enum: SkillsExtractionStatus,
+    default: SkillsExtractionStatus.PENDING,
+  })
+  skillsExtractionStatus: SkillsExtractionStatus;
 
   @OneToMany(() => Application, (application) => application.job)
   applications: Application[];

@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,12 +8,17 @@ import { PaginationDto } from '../../utils/pagination/pagination.dto';
 import { paginateAndFormat } from '../../utils/pagination/pagination.util';
 import { GetJobListDto } from './dto/get-job-list.dto';
 import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
+import { ProducerService } from '../../kafka/producers/producer.service';
+import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
 
 @Injectable()
 export class JobsService {
+  private readonly logger = new Logger(JobsService.name);
+
   constructor(
     @InjectRepository(Job) private repo: Repository<Job>,
     private dataSource: DataSource,
+    private readonly producerService: ProducerService,
   ) {}
   // async create(createJobDto: CreateJobDto): Promise<Job> {
   //   const job = this.repo.create(createJobDto);
@@ -35,25 +36,35 @@ export class JobsService {
       const job = queryRunner.manager.create(Job, jobData);
       const savedJob = await queryRunner.manager.save(job);
 
+      // Nếu skills được truyền tay (với skillId) thì dùng trực tiếp,
+      // ngược lại hệ thống sẽ tự extract từ JD qua Kafka pipeline.
       if (skills && skills.length > 0) {
-        for (const skillItem of skills) {
-          if (!skillItem.skillId) {
-            throw new BadRequestException(
-              `Yêu cầu cung cấp skillId cho kỹ năng: ${skillItem.skillName}. Kỹ năng phải được chọn từ danh sách có sẵn.`,
-            );
-          }
+        const manualSkills = skills.filter((s) => s.skillId);
+        for (const skillItem of manualSkills) {
           const entitySkill = queryRunner.manager.create(EntitySkill, {
             job: { id: savedJob.id },
             skill: { id: skillItem.skillId },
             experienceYears: skillItem.experienceYears,
             standardizedName: skillItem.standardizedName || skillItem.skillName,
           });
-
           await queryRunner.manager.save(entitySkill);
         }
       }
 
       await queryRunner.commitTransaction();
+
+      // Trigger async JD skill extraction qua Kafka
+      await this.producerService.produce(
+        KAFKA_TOPICS.JD_SKILL_EXTRACTION_REQUEST,
+        {
+          key: savedJob.id,
+          value: JSON.stringify({ jobId: savedJob.id }),
+        },
+      );
+      this.logger.log(
+        `Published JD_SKILL_EXTRACTION_REQUEST for Job ID: ${savedJob.id}`,
+      );
+
       return savedJob;
     } catch (error) {
       await queryRunner.rollbackTransaction();

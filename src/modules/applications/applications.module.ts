@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ApplicationsService } from './applications.service';
 import { ApplicationsController } from './applications.controller';
 import { ApplicationsConsumerController } from './applications-consumer.controller';
+import { ApplicationsMatchingConsumerController } from './applications-matching-consumer.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Application } from './entities/application.entity';
 import { Job } from '../jobs/entities/job.entity';
@@ -11,6 +12,7 @@ import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
 import { MinioModule } from '../../infrastructure/minio/minio.module';
 import { KafkaModule } from '../../kafka/kafka.module';
 import { LlmModule } from '../../infrastructure/llm/llm.module';
+import { MatchingModule } from '../../core-ai/matching/matching.module';
 
 @Module({
   imports: [
@@ -18,8 +20,13 @@ import { LlmModule } from '../../infrastructure/llm/llm.module';
     MinioModule,
     KafkaModule,
     LlmModule,
+    MatchingModule,
   ],
-  controllers: [ApplicationsController, ApplicationsConsumerController],
+  controllers: [
+    ApplicationsController,
+    ApplicationsConsumerController,
+    ApplicationsMatchingConsumerController,
+  ],
   providers: [ApplicationsService],
 })
 export class ApplicationsModule {}

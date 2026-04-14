@@ -11,8 +11,10 @@ import { retry } from '../../utils/retry';
 import { DlqService } from '../../kafka/dlq/dlq-handler.service';
 import { MinioService } from '../../infrastructure/minio/minio.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
+import { ProducerService } from '../../kafka/producers/producer.service';
 import { Application } from './entities/application.entity';
 import { Candidate } from '../candidates/entities/candidate.entity';
+import { ILike } from 'typeorm';
 import { Skill } from '../skills/entities/skill.entity';
 import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
 const pdfParse: (
@@ -27,6 +29,7 @@ export class ApplicationsConsumerController {
     private readonly dlqService: DlqService,
     private readonly minioService: MinioService,
     private readonly llmProviderService: LlmProviderService,
+    private readonly producerService: ProducerService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -86,6 +89,21 @@ export class ApplicationsConsumerController {
         },
         { retries: 3, initialDelay: 1000 },
       );
+
+      // Trigger Phase 4: Hybrid Matching
+      // Placed outside retry so a Kafka publish failure does not re-trigger
+      // the expensive MinIO → PDF → LLM pipeline.
+      await this.producerService.produce(KAFKA_TOPICS.CV_MATCHING_REQUEST, {
+        key: data.applicationId,
+        value: JSON.stringify({
+          applicationId: data.applicationId,
+          candidateId: data.candidateId,
+          jobId: data.jobId,
+        }),
+      });
+      this.logger.log(
+        `Published CV_MATCHING_REQUEST for Application ID: ${data.applicationId}`,
+      );
     } catch (error: any) {
       this.logger.error('Failed to process CV. Sending to DLQ.', error);
       await this.dlqService.sendToDlq([message as any], topic, error);
@@ -112,44 +130,25 @@ export class ApplicationsConsumerController {
         },
       });
       if (parsedData.skills && Array.isArray(parsedData.skills)) {
+        // Delete all previous EntitySkills for this candidate before re-inserting
+        // so that re-parsing the same CV always produces a deterministic skill set.
+        await queryRunner.manager.delete(EntitySkill, {
+          candidate: { id: candidateId },
+        });
+
         for (const skillItem of parsedData.skills) {
           const skill = await queryRunner.manager.findOne(Skill, {
-            where: { name: skillItem.standardizedName },
+            where: { name: ILike(skillItem.standardizedName) },
           });
+          const canonicalName = skill?.name ?? skillItem.standardizedName ?? skillItem.originalName;
 
-          let existingEntitySkill;
-          if (skill) {
-            existingEntitySkill = await queryRunner.manager.findOne(
-              EntitySkill,
-              {
-                where: {
-                  candidate: { id: candidateId },
-                  skill: { id: skill.id },
-                },
-              },
-            );
-          } else {
-            existingEntitySkill = await queryRunner.manager.findOne(
-              EntitySkill,
-              {
-                where: {
-                  candidate: { id: candidateId },
-                  standardizedName: skillItem.standardizedName,
-                },
-              },
-            );
-          }
-
-          if (!existingEntitySkill) {
-            const newEntitySkill = queryRunner.manager.create(EntitySkill, {
-              candidate: { id: candidateId },
-              skill: skill ? { id: skill.id } : undefined,
-              experienceYears: skillItem.experienceYears,
-              standardizedName:
-                skillItem.standardizedName || skillItem.originalName,
-            });
-            await queryRunner.manager.save(newEntitySkill);
-          }
+          const newEntitySkill = queryRunner.manager.create(EntitySkill, {
+            candidate: { id: candidateId },
+            skill: skill ? { id: skill.id } : undefined,
+            experienceYears: skillItem.experienceYears,
+            standardizedName: canonicalName,
+          });
+          await queryRunner.manager.save(newEntitySkill);
         }
       }
       await queryRunner.manager.update(Application, applicationId, {
