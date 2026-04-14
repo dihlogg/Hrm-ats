@@ -107,7 +107,7 @@ export class MatchingService {
           consumedCvNames.add(cvNorm);
           fuzzyMatched = true;
           this.logger.debug(
-            `Fuzzy matched: "${jdSkill.standardizedName}" ↔ "${cvNorm}" (similarity: ${similarity.toFixed(3)})`,
+            `Fuzzy matched: "${jdSkill.standardizedName}" with "${cvNorm}" (similarity: ${similarity.toFixed(3)})`,
           );
           break;
         }

@@ -77,7 +77,6 @@ export class ApplicationsConsumerController {
           );
 
           // text extraction
-          this.logger.log('Extracting text from PDF');
           const pdfData = await pdfParse(pdfBuffer);
           let rawText = pdfData.text;
 
@@ -85,12 +84,10 @@ export class ApplicationsConsumerController {
           rawText = this.cleanExtractedText(rawText);
 
           // Integrate with LLM for parsing
-          this.logger.log('Sending text to LLM for parsing');
           const parsedData =
             await this.llmProviderService.parseCvToJson(rawText);
 
           // update db
-          this.logger.log('Updating Database');
           await this.processAndSaveData(
             data.applicationId,
             data.candidateId,
