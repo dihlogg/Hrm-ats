@@ -84,6 +84,9 @@ export class Job extends BaseEntities {
   @Column({ nullable: true })
   storageKey: string;
 
+  @Column('jsonb', { nullable: true })
+  jdEmbedding: number[];
+
   @Column({
     type: 'enum',
     enum: JobStatus,

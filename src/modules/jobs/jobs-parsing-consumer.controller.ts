@@ -10,6 +10,7 @@ import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
 import { retry } from '../../utils/retry';
 import { DlqService } from '../../kafka/dlq/dlq-handler.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
+import { EmbeddingService } from '../../infrastructure/llm/embedding.service';
 import { Job, SkillsExtractionStatus } from './entities/job.entity';
 import { Skill } from '../skills/entities/skill.entity';
 import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
@@ -21,8 +22,9 @@ export class JobsParsingConsumerController {
   constructor(
     private readonly dlqService: DlqService,
     private readonly llmProviderService: LlmProviderService,
+    private readonly embeddingService: EmbeddingService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   @MessagePattern(KAFKA_TOPICS.JD_SKILL_EXTRACTION_REQUEST)
   async onJdSkillExtractionRequest(
@@ -79,11 +81,16 @@ export class JobsParsingConsumerController {
           const parsedResult =
             await this.llmProviderService.parseJdSkills(combinedText);
 
-          // save entity skills
-          await this.saveExtractedSkills(job, parsedResult.skills);
+          // generate JD embedding and cache it (so matching phase can reuse)
+          this.logger.log(`Generating JD embedding for Job ID: ${job.id}`);
+          const jdEmbedding =
+            await this.embeddingService.generateEmbedding(combinedText);
+
+          // save entity skills + embedding
+          await this.saveExtractedSkills(job, parsedResult.skills, jdEmbedding);
 
           this.logger.log(
-            `Successfully extracted ${parsedResult.skills.length} skill(s) for Job ID: ${job.id}`,
+            `Successfully extracted ${parsedResult.skills.length} skill(s) and cached embedding for Job ID: ${job.id}`,
           );
         },
         { retries: 3, initialDelay: 1000 },
@@ -112,7 +119,11 @@ export class JobsParsingConsumerController {
     }
   }
 
-  private async saveExtractedSkills(job: Job, skills: any[]) {
+  private async saveExtractedSkills(
+    job: Job,
+    skills: any[],
+    jdEmbedding: number[],
+  ) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -149,6 +160,7 @@ export class JobsParsingConsumerController {
 
       await queryRunner.manager.update(Job, job.id, {
         parsedJson: { extractedSkills: skills },
+        jdEmbedding,
         skillsExtractionStatus: SkillsExtractionStatus.COMPLETED,
       });
 

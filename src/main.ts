@@ -23,7 +23,8 @@ async function bootstrap() {
       },
       consumer: {
         groupId: 'hrm-ats-consumer-group',
-        rebalanceTimeout: 300000, // 5 minutes — matches sessionTimeout
+        sessionTimeout: 300000,
+        rebalanceTimeout: 300000,
         heartbeatInterval: 10000,
       },
     },
