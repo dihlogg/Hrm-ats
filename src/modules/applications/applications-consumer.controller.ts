@@ -31,7 +31,7 @@ export class ApplicationsConsumerController {
     private readonly llmProviderService: LlmProviderService,
     private readonly producerService: ProducerService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   // Clean (Token Optimization) function
   private cleanExtractedText(rawText: string): string {
@@ -55,6 +55,21 @@ export class ApplicationsConsumerController {
 
       await retry(
         async () => {
+          // Idempotency guard: skip if already successfully parsed
+          const existingApp = await this.dataSource.manager.findOne(
+            Application,
+            { where: { id: data.applicationId }, select: ['id', 'status'] },
+          );
+          if (
+            existingApp?.status === 'PARSED_SUCCESS' ||
+            existingApp?.status === 'MATCHED'
+          ) {
+            this.logger.warn(
+              `Application ${data.applicationId} already processed (status: ${existingApp.status}). Skipping duplicate CV_PARSING_REQUEST.`,
+            );
+            return;
+          }
+
           // read minio file
           this.logger.log(`Fetching PDF from MinIO: ${data.storageKey}`);
           const pdfBuffer = await this.minioService.getFileBuffer(
@@ -106,6 +121,21 @@ export class ApplicationsConsumerController {
       );
     } catch (error: any) {
       this.logger.error('Failed to process CV. Sending to DLQ.', error);
+
+      // Mark application as PARSING_FAILED so HR can identify broken submissions
+      if (data?.applicationId) {
+        await this.dataSource.manager
+          .update(Application, data.applicationId, {
+            status: 'PARSING_FAILED',
+          })
+          .catch((updateErr) =>
+            this.logger.error(
+              `Could not update Application ${data.applicationId} status to PARSING_FAILED`,
+              updateErr,
+            ),
+          );
+      }
+
       await this.dlqService.sendToDlq([message as any], topic, error);
     }
   }

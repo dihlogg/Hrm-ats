@@ -13,7 +13,7 @@ import { EmbeddingService } from '../../infrastructure/llm/embedding.service';
 import { MatchingService } from '../../core-ai/matching/matching.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
 import { Application } from './entities/application.entity';
-import { Job } from '../jobs/entities/job.entity';
+import { Job, SkillsExtractionStatus } from '../jobs/entities/job.entity';
 import { Candidate } from '../candidates/entities/candidate.entity';
 
 @Controller()
@@ -28,7 +28,7 @@ export class ApplicationsMatchingConsumerController {
     private readonly embeddingService: EmbeddingService,
     private readonly matchingService: MatchingService,
     private readonly llmProviderService: LlmProviderService,
-  ) {}
+  ) { }
 
   @MessagePattern(KAFKA_TOPICS.CV_MATCHING_REQUEST)
   async onCvMatchingRequest(
@@ -49,6 +49,15 @@ export class ApplicationsMatchingConsumerController {
             relations: ['entitySkills', 'entitySkills.skill'],
           });
           if (!job) throw new Error(`Job not found: ${data.jobId}`);
+
+          // Guard: JD skills must be fully extracted before matching
+          if (
+            job.skillsExtractionStatus !== SkillsExtractionStatus.COMPLETED
+          ) {
+            throw new Error(
+              `Job ${data.jobId} skills extraction not completed (status: ${job.skillsExtractionStatus}). Will retry.`,
+            );
+          }
 
           // load candidate
           const candidate = await this.dataSource.manager.findOne(Candidate, {
@@ -73,37 +82,52 @@ export class ApplicationsMatchingConsumerController {
             return;
           }
 
-          // build plan text for LLM
-          const jdText = [
-            job.title,
-            job.jobTitleName,
-            job.level,
-            job.description,
-            job.requirements,
-            job.responsibilities,
-          ]
-            .filter(Boolean)
-            .join('\n\n');
-
+          // build plain text for embedding (only needed if JD embedding not cached)
           const cvText = candidate.rawCvText ?? '';
 
-          if (!jdText.trim()) {
-            throw new Error(
-              `Job ${data.jobId} has no text content for embedding`,
-            );
-          }
           if (!cvText.trim()) {
             throw new Error(
               `Candidate ${data.candidateId} has no rawCvText for embedding`,
             );
           }
 
-          // generate embeddings in parallel
-          this.logger.log('Generating JD and CV embeddings in parallel');
-          const [jdVector, cvVector] = await Promise.all([
-            this.embeddingService.generateEmbedding(jdText),
-            this.embeddingService.generateEmbedding(cvText),
-          ]);
+          // Use cached JD embedding if available, otherwise generate on-the-fly (fallback for old jobs)
+          let jdVector: number[];
+          if (job.jdEmbedding && job.jdEmbedding.length > 0) {
+            this.logger.log('Using cached JD embedding from DB');
+            jdVector = job.jdEmbedding;
+          } else {
+            this.logger.log(
+              'No cached JD embedding found — generating on-the-fly (fallback)',
+            );
+            const jdText = [
+              job.title,
+              job.jobTitleName,
+              job.level,
+              job.description,
+              job.requirements,
+              job.responsibilities,
+            ]
+              .filter(Boolean)
+              .join('\n\n');
+
+            if (!jdText.trim()) {
+              throw new Error(
+                `Job ${data.jobId} has no text content for embedding`,
+              );
+            }
+            jdVector = await this.embeddingService.generateEmbedding(jdText);
+
+            // Cache the JD embedding for future use
+            await this.dataSource.manager.update(Job, job.id, {
+              jdEmbedding: jdVector,
+            });
+          }
+
+          // Generate CV embedding
+          this.logger.log('Generating CV embedding');
+          const cvVector =
+            await this.embeddingService.generateEmbedding(cvText);
 
           // semantic similarity score
           const semanticScore = this.embeddingService.cosineSimilarity(
@@ -112,14 +136,15 @@ export class ApplicationsMatchingConsumerController {
           );
           this.logger.log(`Semantic score: ${semanticScore.toFixed(4)}`);
 
-          // skills gap analysis
-          // Prefer skill.name (canonical from Skills table) over free-text standardizedName
+          // skills gap analysis (3-tier: skillId → exact → fuzzy)
           const jdSkills = (job.entitySkills ?? []).map((es) => ({
+            skillId: es.skill?.id,
             standardizedName: es.skill?.name ?? es.standardizedName ?? '',
             experienceYears: es.experienceYears ?? 0,
           }));
 
           const cvSkills = (candidate.entitySkills ?? []).map((es) => ({
+            skillId: es.skill?.id,
             standardizedName: es.skill?.name ?? es.standardizedName ?? '',
             experienceYears: es.experienceYears ?? 0,
           }));
@@ -139,7 +164,7 @@ export class ApplicationsMatchingConsumerController {
           );
           this.logger.log(`Experience status: ${expResult.status}`);
 
-          // xomposite score
+          // composite score
           const { matchScore, breakdown } =
             this.matchingService.computeCompositeScore(
               semanticScore,
@@ -166,7 +191,7 @@ export class ApplicationsMatchingConsumerController {
             },
           );
 
-          // oersist match results to DB
+          // persist match results to DB
           this.logger.log(
             `Saving match results for Application ${data.applicationId}`,
           );

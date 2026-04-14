@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -18,7 +20,7 @@ export class ApplicationsService {
     private readonly dataSource: DataSource,
     private readonly minioService: MinioService,
     private readonly producerService: ProducerService,
-  ) {}
+  ) { }
 
   // get presigned url upload cv to minio
   async getPresignedUrl(fileName: string, contentType: string) {
@@ -36,6 +38,14 @@ export class ApplicationsService {
       });
       if (!job) {
         throw new NotFoundException('Job not found');
+      }
+
+      // Verify CV file exists on MinIO before proceeding
+      const fileExists = await this.minioService.fileExists(dto.storageKey);
+      if (!fileExists) {
+        throw new BadRequestException(
+          'CV file not found on storage. Please upload the file first using the presigned URL.',
+        );
       }
 
       let candidate = await queryRunner.manager.findOne(Candidate, {
@@ -87,9 +97,8 @@ export class ApplicationsService {
       return savedApplication;
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      throw new InternalServerErrorException(
-        'Submission failed: ' + error.message,
-      );
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException('Submission failed: ' + error.message);
     } finally {
       await queryRunner.release();
     }
