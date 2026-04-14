@@ -94,12 +94,8 @@ export class ApplicationsMatchingConsumerController {
           // Use cached JD embedding if available, otherwise generate on-the-fly (fallback for old jobs)
           let jdVector: number[];
           if (job.jdEmbedding && job.jdEmbedding.length > 0) {
-            this.logger.log('Using cached JD embedding from DB');
             jdVector = job.jdEmbedding;
           } else {
-            this.logger.log(
-              'No cached JD embedding found — generating on-the-fly (fallback)',
-            );
             const jdText = [
               job.title,
               job.jobTitleName,
@@ -125,7 +121,6 @@ export class ApplicationsMatchingConsumerController {
           }
 
           // Generate CV embedding
-          this.logger.log('Generating CV embedding');
           const cvVector =
             await this.embeddingService.generateEmbedding(cvText);
 
@@ -176,7 +171,6 @@ export class ApplicationsMatchingConsumerController {
           );
 
           // generate match reason via LLM
-          this.logger.log('Generating match reason via LLM');
           const matchReason = await this.llmProviderService.generateMatchReason(
             {
               jobTitle: job.jobTitleName ?? job.title ?? '',
