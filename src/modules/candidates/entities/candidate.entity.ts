@@ -30,6 +30,9 @@ export class Candidate extends BaseEntities {
   storageKey: string;
 
   @Column('jsonb', { nullable: true })
+  cvEmbedding: number[];
+
+  @Column('jsonb', { nullable: true })
   metadata: any;
 
   @OneToMany(() => Application, (application) => application.candidate)

@@ -120,9 +120,21 @@ export class ApplicationsMatchingConsumerController {
             });
           }
 
-          // Generate CV embedding
-          const cvVector =
-            await this.embeddingService.generateEmbedding(cvText);
+          // Use cached CV embedding if available
+          let cvVector: number[];
+          if (candidate.cvEmbedding && candidate.cvEmbedding.length > 0) {
+            cvVector = candidate.cvEmbedding;
+            this.logger.debug(
+              `Reusing cached CV embedding for Candidate ${data.candidateId}`,
+            );
+          } else {
+            cvVector = await this.embeddingService.generateEmbedding(cvText);
+
+            // Cache the CV embedding
+            await this.dataSource.manager.update(Candidate, candidate.id, {
+              cvEmbedding: cvVector,
+            });
+          }
 
           // semantic similarity score
           const semanticScore = this.embeddingService.cosineSimilarity(
@@ -180,6 +192,11 @@ export class ApplicationsMatchingConsumerController {
               matchScore,
               skillMatchPercent: gapResult.skillMatchPercent,
               experienceMatchStatus: expResult.status,
+              experienceRatio: expResult.requiredYears > 0
+                ? expResult.candidateYears / expResult.requiredYears
+                : 0,
+              candidateYears: expResult.candidateYears,
+              requiredYears: expResult.requiredYears,
               matchedSkills: gapResult.matched,
               missingSkills: gapResult.missing,
             },

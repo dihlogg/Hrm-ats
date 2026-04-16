@@ -23,6 +23,10 @@ export interface MatchReasonParams {
   matchScore: number;
   skillMatchPercent: number;
   experienceMatchStatus: string;
+  /** candidateYears / requiredYears → 0..N (raw ratio, not capped) */
+  experienceRatio: number;
+  candidateYears: number;
+  requiredYears: number;
   matchedSkills: string[];
   missingSkills: string[];
 }

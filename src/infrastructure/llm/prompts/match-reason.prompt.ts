@@ -17,6 +17,9 @@ export const MATCH_REASON_PROMPT = (params: MatchReasonParams): string => {
     matchScore,
     skillMatchPercent,
     experienceMatchStatus,
+    experienceRatio,
+    candidateYears,
+    requiredYears,
     matchedSkills,
     missingSkills,
   } = params;
@@ -25,6 +28,12 @@ export const MATCH_REASON_PROMPT = (params: MatchReasonParams): string => {
     matchedSkills.length > 0 ? matchedSkills.join(', ') : 'None';
   const missingList =
     missingSkills.length > 0 ? missingSkills.slice(0, 5).join(', ') : 'None';
+
+  // Format: "SLIGHTLY_BELOW (3.9y/5y — 78%)"
+  const expRatioPercent = Math.round(experienceRatio * 100);
+  const experienceDetail = requiredYears > 0
+    ? `${experienceMatchStatus} (${candidateYears}y/${requiredYears}y — ${expRatioPercent}%)`
+    : `${experienceMatchStatus} (No specific experience requirement)`;
 
   return `
     Role: You are a Senior Talent Acquisition Expert.
@@ -40,7 +49,7 @@ export const MATCH_REASON_PROMPT = (params: MatchReasonParams): string => {
     === MATCHING RESULTS ===
     Overall Score: ${matchScore}/100
     Skill Match: ${skillMatchPercent}%
-    Experience Match: ${experienceMatchStatus}
+    Experience Match: ${experienceDetail}
     Matched Skills: ${matchedList}
     Missing Skills (top 5): ${missingList}
 
@@ -55,3 +64,4 @@ export const MATCH_REASON_PROMPT = (params: MatchReasonParams): string => {
     2. Only return the synthesized conclusion from Step 3. Do NOT include "Step 1", "Step 2", "Step 3", or any other reasoning steps in the final JSON output.
   `;
 };
+
