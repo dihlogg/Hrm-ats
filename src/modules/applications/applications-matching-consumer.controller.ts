@@ -12,7 +12,7 @@ import { DlqService } from '../../kafka/dlq/dlq-handler.service';
 import { EmbeddingService } from '../../infrastructure/llm/embedding.service';
 import { MatchingService } from '../../core-ai/matching/matching.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
-import { Application } from './entities/application.entity';
+import { Application, ApplicationStatus } from './entities/application.entity';
 import { Job, SkillsExtractionStatus } from '../jobs/entities/job.entity';
 import { Candidate } from '../candidates/entities/candidate.entity';
 
@@ -75,7 +75,7 @@ export class ApplicationsMatchingConsumerController {
           if (!application)
             throw new Error(`Application not found: ${data.applicationId}`);
 
-          if (application.status !== 'PARSED_SUCCESS') {
+          if (application.status !== ApplicationStatus.PARSED_SUCCESS) {
             this.logger.warn(
               `Application ${data.applicationId} is not in PARSED_SUCCESS state (current: ${application.status}). Skipping.`,
             );
@@ -210,7 +210,7 @@ export class ApplicationsMatchingConsumerController {
             Application,
             data.applicationId,
             {
-              status: 'MATCHED',
+            status: ApplicationStatus.MATCHED,
               matchScore,
               skillMatchPercent: gapResult.skillMatchPercent,
               experienceMatchStatus: expResult.status,
@@ -229,6 +229,21 @@ export class ApplicationsMatchingConsumerController {
         `Failed to match Application ${data?.applicationId}. Sending to DLQ.`,
         error,
       );
+
+      // Mark application as MATCHING_FAILED so HR can identify broken matches
+      if (data?.applicationId) {
+        await this.dataSource.manager
+          .update(Application, data.applicationId, {
+            status: ApplicationStatus.MATCHING_FAILED,
+          })
+          .catch((updateErr) =>
+            this.logger.error(
+              `Could not update Application ${data.applicationId} status to MATCHING_FAILED`,
+              updateErr,
+            ),
+          );
+      }
+
       await this.dlqService.sendToDlq([message as any], topic, error);
     }
   }

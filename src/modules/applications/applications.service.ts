@@ -10,7 +10,7 @@ import { DataSource } from 'typeorm';
 import { MinioService } from '../../infrastructure/minio/minio.service';
 import { Candidate } from '../candidates/entities/candidate.entity';
 import { Job } from '../jobs/entities/job.entity';
-import { Application } from './entities/application.entity';
+import { Application, ApplicationStatus } from './entities/application.entity';
 import { ProducerService } from '../../kafka/producers/producer.service';
 import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
 
@@ -72,7 +72,7 @@ export class ApplicationsService {
       const application = queryRunner.manager.create(Application, {
         job: { id: job.id },
         candidate: { id: candidate.id },
-        status: 'PARSING',
+        status: ApplicationStatus.PARSING,
         coverLetter: dto.coverLetter,
         jobSnapshotJson: {
           jobTitleName: job.jobTitleName,

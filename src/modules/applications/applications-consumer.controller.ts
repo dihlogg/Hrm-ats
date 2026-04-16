@@ -12,7 +12,7 @@ import { DlqService } from '../../kafka/dlq/dlq-handler.service';
 import { MinioService } from '../../infrastructure/minio/minio.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
 import { ProducerService } from '../../kafka/producers/producer.service';
-import { Application } from './entities/application.entity';
+import { Application, ApplicationStatus } from './entities/application.entity';
 import { Candidate } from '../candidates/entities/candidate.entity';
 import { ILike } from 'typeorm';
 import { Skill } from '../skills/entities/skill.entity';
@@ -61,8 +61,8 @@ export class ApplicationsConsumerController {
             { where: { id: data.applicationId }, select: ['id', 'status'] },
           );
           if (
-            existingApp?.status === 'PARSED_SUCCESS' ||
-            existingApp?.status === 'MATCHED'
+          existingApp?.status === ApplicationStatus.PARSED_SUCCESS ||
+            existingApp?.status === ApplicationStatus.MATCHED
           ) {
             this.logger.warn(
               `Application ${data.applicationId} already processed (status: ${existingApp.status}). Skipping duplicate CV_PARSING_REQUEST.`,
@@ -123,7 +123,7 @@ export class ApplicationsConsumerController {
       if (data?.applicationId) {
         await this.dataSource.manager
           .update(Application, data.applicationId, {
-            status: 'PARSING_FAILED',
+            status: ApplicationStatus.PARSING_FAILED,
           })
           .catch((updateErr) =>
             this.logger.error(
@@ -150,6 +150,7 @@ export class ApplicationsConsumerController {
     try {
       await queryRunner.manager.update(Candidate, candidateId, {
         rawCvText: rawText,
+        cvEmbedding: null as any,
         summary: parsedData.summary,
         metadata: {
           education: parsedData.education,
@@ -179,7 +180,7 @@ export class ApplicationsConsumerController {
         }
       }
       await queryRunner.manager.update(Application, applicationId, {
-        status: 'PARSED_SUCCESS',
+        status: ApplicationStatus.PARSED_SUCCESS,
         rawData: JSON.stringify(parsedData),
       });
 
