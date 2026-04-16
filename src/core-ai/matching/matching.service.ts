@@ -20,13 +20,15 @@ export interface SkillGapResult {
 }
 
 export type ExperienceMatchStatus =
-  | 'BELOW_REQUIRED'
+  | 'FAR_BELOW'
+  | 'SLIGHTLY_BELOW'
   | 'MEETS_REQUIRED'
-  | 'EXCEEDS_REQUIRED';
+  | 'EXCEEDS_REQUIRED'
+  | 'OUTSTANDING';
 
 export interface ExperienceMatchResult {
   status: ExperienceMatchStatus;
-  /** Numeric weight for composite score: 0 | 0.5 | 1 */
+  /** Continuous score: min(1, candidateYears / requiredYears) → 0..1 */
   score: number;
   /** Total years JD requires across matched skills */
   requiredYears: number;
@@ -51,8 +53,10 @@ export class MatchingService {
   private readonly WEIGHT_SKILL = 0.4;
   private readonly WEIGHT_EXPERIENCE = 0.2;
 
+  private readonly OUTSTANDING_THRESHOLD = 1.5;
   private readonly EXCEED_THRESHOLD = 1.1;
   private readonly MEET_THRESHOLD = 0.8;
+  private readonly SLIGHTLY_BELOW_THRESHOLD = 0.5;
 
   /** Minimum Jaro-Winkler similarity to consider a fuzzy match */
   private readonly FUZZY_THRESHOLD = 0.85;
@@ -196,18 +200,22 @@ export class MatchingService {
       };
     }
 
-    let status: ExperienceMatchStatus;
-    let score: number;
+    // Continuous score: smooth 0→1 scale, capped at 1.0
+    const ratio = candidateYears / requiredYears;
+    const score = Math.min(1, this.round(ratio, 4));
 
-    if (candidateYears >= requiredYears * this.EXCEED_THRESHOLD) {
+    // 5-level status label (for logging & LLM prompt context only)
+    let status: ExperienceMatchStatus;
+    if (ratio >= this.OUTSTANDING_THRESHOLD) {
+      status = 'OUTSTANDING';
+    } else if (ratio >= this.EXCEED_THRESHOLD) {
       status = 'EXCEEDS_REQUIRED';
-      score = 1;
-    } else if (candidateYears >= requiredYears * this.MEET_THRESHOLD) {
+    } else if (ratio >= this.MEET_THRESHOLD) {
       status = 'MEETS_REQUIRED';
-      score = 0.5;
+    } else if (ratio >= this.SLIGHTLY_BELOW_THRESHOLD) {
+      status = 'SLIGHTLY_BELOW';
     } else {
-      status = 'BELOW_REQUIRED';
-      score = 0;
+      status = 'FAR_BELOW';
     }
 
     return { status, score, requiredYears, candidateYears };
