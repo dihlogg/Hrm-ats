@@ -3,6 +3,14 @@ import { BaseEntities } from '../../../common/entities/base.entity';
 import { Candidate } from '../../candidates/entities/candidate.entity';
 import { Job } from '../../jobs/entities/job.entity';
 
+export enum ApplicationStatus {
+  PARSING = 'PARSING',
+  PARSED_SUCCESS = 'PARSED_SUCCESS',
+  PARSING_FAILED = 'PARSING_FAILED',
+  MATCHED = 'MATCHED',
+  MATCHING_FAILED = 'MATCHING_FAILED',
+}
+
 @Entity('Applications')
 export class Application extends BaseEntities {
   @ManyToOne(() => Job, (job) => job.applications)
@@ -13,8 +21,8 @@ export class Application extends BaseEntities {
   @JoinColumn({ name: 'candidateId' })
   candidate: Candidate;
 
-  @Column()
-  status: string;
+  @Column({ type: 'varchar', default: ApplicationStatus.PARSING })
+  status: ApplicationStatus;
 
   @Column('text', { nullable: true })
   coverLetter: string;
