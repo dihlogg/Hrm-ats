@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateApplicationDto } from './dto/create-application.dto';
+import { GetApplicationsByJobDto } from './dto/get-applications-by-job.dto';
 import { DataSource } from 'typeorm';
 import { MinioService } from '../../infrastructure/minio/minio.service';
 import { Candidate } from '../candidates/entities/candidate.entity';
@@ -13,6 +14,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { Application, ApplicationStatus } from './entities/application.entity';
 import { ProducerService } from '../../kafka/producers/producer.service';
 import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
+import { paginateAndFormat } from '../../utils/pagination/pagination.util';
 
 @Injectable()
 export class ApplicationsService {
@@ -26,6 +28,12 @@ export class ApplicationsService {
   async getPresignedUrl(fileName: string, contentType: string) {
     return this.minioService.generatePresignedUrl(fileName, contentType);
   }
+
+  // get presigned url to download/view a CV from minio
+  async getPresignedDownloadUrl(storageKey: string) {
+    return this.minioService.generateDownloadPresignedUrl(storageKey);
+  }
+
 
   async applyJob(dto: CreateApplicationDto) {
     const queryRunner = this.dataSource.createQueryRunner();
@@ -102,5 +110,42 @@ export class ApplicationsService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async getApplicationsByJob(jobId: string, query: GetApplicationsByJobDto) {
+    const { page = 1, pageSize = 10, status, minScore } = query;
+
+    const job = await this.dataSource.manager.findOne(Job, {
+      where: { id: jobId },
+    });
+    if (!job) throw new NotFoundException(`Job not found: ${jobId}`);
+
+    const qb = this.dataSource
+      .getRepository(Application)
+      .createQueryBuilder('app')
+      .leftJoinAndSelect('app.candidate', 'candidate')
+      .where('app.jobId = :jobId', { jobId })
+      .orderBy('app.matchScore', 'DESC', 'NULLS LAST')
+      .addOrderBy('app.createDate', 'DESC');
+
+    // Default: only return MATCHED applications (pipeline completed)
+    if (status) {
+      qb.andWhere('app.status = :status', { status });
+    } else {
+      qb.andWhere('app.status = :status', {
+        status: ApplicationStatus.MATCHED,
+      });
+    }
+
+    if (minScore !== undefined) {
+      qb.andWhere('app.matchScore >= :minScore', { minScore });
+    }
+
+    return paginateAndFormat(qb, {
+      page: Number(page),
+      pageSize: Number(pageSize),
+      useQueryBuilder: true,
+      queryBuilder: qb,
+    });
   }
 }
