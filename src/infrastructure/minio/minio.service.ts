@@ -55,6 +55,20 @@ export class MinioService {
     return { url, storageKey };
   }
 
+  async generateDownloadPresignedUrl(
+    storageKey: string,
+    expiresIn = 900,
+  ): Promise<{ url: string }> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: storageKey,
+    });
+
+    const url = await getSignedUrl(this.s3Client, command, { expiresIn });
+
+    return { url };
+  }
+
   async fileExists(storageKey: string): Promise<boolean> {
     try {
       await this.s3Client.send(
