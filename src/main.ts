@@ -23,9 +23,9 @@ async function bootstrap() {
       },
       consumer: {
         groupId: 'hrm-ats-consumer-group',
-        sessionTimeout: 300000,
-        rebalanceTimeout: 300000,
-        heartbeatInterval: 10000,
+        sessionTimeout: 60000,
+        rebalanceTimeout: 90000,
+        heartbeatInterval: 3000,
       },
     },
   });

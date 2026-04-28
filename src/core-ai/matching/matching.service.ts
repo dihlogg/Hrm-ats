@@ -185,7 +185,7 @@ export class MatchingService {
       for (const cv of cvNormalizedList) {
         if (this.jaroWinklerSimilarity(jdNorm, cv.name) >= this.FUZZY_THRESHOLD) {
           requiredYears += jdSkill.experienceYears ?? 0;
-          candidateYears += cv.years;
+          candidateYears += cv.years ?? 0; // null-safe: DB có thể trả về null
           break;
         }
       }
@@ -232,17 +232,21 @@ export class MatchingService {
     skillScore: number,
     experienceScore: number,
   ): CompositeScoreBreakdown {
+    const s = isFinite(semanticScore) ? semanticScore : 0;
+    const sk = isFinite(skillScore) ? skillScore : 0;
+    const ex = isFinite(experienceScore) ? experienceScore : 0;
+
     const composite =
-      semanticScore * this.WEIGHT_SEMANTIC +
-      skillScore * this.WEIGHT_SKILL +
-      experienceScore * this.WEIGHT_EXPERIENCE;
+      s * this.WEIGHT_SEMANTIC +
+      sk * this.WEIGHT_SKILL +
+      ex * this.WEIGHT_EXPERIENCE;
 
     return {
       matchScore: this.round(composite * 100),
       breakdown: {
-        semantic: this.round(semanticScore * this.WEIGHT_SEMANTIC * 100),
-        skill: this.round(skillScore * this.WEIGHT_SKILL * 100),
-        experience: this.round(experienceScore * this.WEIGHT_EXPERIENCE * 100),
+        semantic: this.round(s * this.WEIGHT_SEMANTIC * 100),
+        skill: this.round(sk * this.WEIGHT_SKILL * 100),
+        experience: this.round(ex * this.WEIGHT_EXPERIENCE * 100),
       },
     };
   }

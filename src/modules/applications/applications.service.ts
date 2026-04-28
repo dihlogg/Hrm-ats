@@ -66,14 +66,12 @@ export class ApplicationsService {
           email: dto.email,
           phoneNumber: dto.phoneNumber,
           profileUrl: dto.profileUrl,
-          storageKey: dto.storageKey,
         });
         candidate = await queryRunner.manager.save(candidate);
       } else {
         candidate.fullName = dto.fullName;
         candidate.phoneNumber = dto.phoneNumber;
         candidate.profileUrl = dto.profileUrl || candidate.profileUrl;
-        candidate.storageKey = dto.storageKey;
         candidate = await queryRunner.manager.save(candidate);
       }
 
@@ -124,6 +122,7 @@ export class ApplicationsService {
       .getRepository(Application)
       .createQueryBuilder('app')
       .leftJoinAndSelect('app.candidate', 'candidate')
+      .leftJoinAndSelect('app.candidateCv', 'candidateCv')
       .where('app.jobId = :jobId', { jobId })
       .orderBy('app.matchScore', 'DESC', 'NULLS LAST')
       .addOrderBy('app.createDate', 'DESC');

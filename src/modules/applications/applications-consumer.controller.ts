@@ -6,6 +6,7 @@ import {
   Payload,
 } from '@nestjs/microservices';
 import { DataSource } from 'typeorm';
+import * as crypto from 'crypto';
 import { KAFKA_TOPICS } from '../../kafka/config/kafka-topics.constant';
 import { retry } from '../../utils/retry';
 import { DlqService } from '../../kafka/dlq/dlq-handler.service';
@@ -13,7 +14,7 @@ import { MinioService } from '../../infrastructure/minio/minio.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
 import { ProducerService } from '../../kafka/producers/producer.service';
 import { Application, ApplicationStatus } from './entities/application.entity';
-import { Candidate } from '../candidates/entities/candidate.entity';
+import { CandidateCv, CvParsingStatus } from '../candidates/entities/candidate-cv.entity';
 import { ILike } from 'typeorm';
 import { Skill } from '../skills/entities/skill.entity';
 import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
@@ -53,15 +54,18 @@ export class ApplicationsConsumerController {
     try {
       this.logger.log(`Received CV_PARSING_REQUEST: ${JSON.stringify(data)}`);
 
+      // Flag: chỉ publish CV_MATCHING_REQUEST nếu CV vừa được xử lý lần đầu
+      let shouldPublishMatching = false;
+
       await retry(
         async () => {
-          // Idempotency guard: skip if already successfully parsed
+          // Idempotency guard: skip nếu đã xử lý thành công (Kafka redelivery)
           const existingApp = await this.dataSource.manager.findOne(
             Application,
             { where: { id: data.applicationId }, select: ['id', 'status'] },
           );
           if (
-          existingApp?.status === ApplicationStatus.PARSED_SUCCESS ||
+            existingApp?.status === ApplicationStatus.PARSED_SUCCESS ||
             existingApp?.status === ApplicationStatus.MATCHED
           ) {
             this.logger.warn(
@@ -70,56 +74,97 @@ export class ApplicationsConsumerController {
             return;
           }
 
-          // read minio file
+          // Step 1: Download PDF from MinIO
           this.logger.log(`Fetching PDF from MinIO: ${data.storageKey}`);
           const pdfBuffer = await this.minioService.getFileBuffer(
             data.storageKey,
           );
 
-          // text extraction
-          const pdfData = await pdfParse(pdfBuffer);
-          let rawText = pdfData.text;
+          // Step 2: Compute content hash (SHA-256) for deduplication
+          const contentHash = crypto
+            .createHash('sha256')
+            .update(pdfBuffer)
+            .digest('hex');
 
-          // clean text optimization
-          rawText = this.cleanExtractedText(rawText);
-
-          // Integrate with LLM for parsing
-          const parsedData =
-            await this.llmProviderService.parseCvToJson(rawText);
-
-          // update db
-          await this.processAndSaveData(
-            data.applicationId,
-            data.candidateId,
-            rawText,
-            parsedData,
+          this.logger.log(
+            `Content hash for storageKey ${data.storageKey}: ${contentHash.substring(0, 16)}...`,
           );
+
+          // Step 3: Check if this exact CV was already parsed for this candidate
+          const existingCv = await this.dataSource.manager.findOne(CandidateCv, {
+            where: {
+              candidate: { id: data.candidateId },
+              contentHash,
+              parsingStatus: CvParsingStatus.SUCCESS,
+            },
+          });
+
+          if (existingCv) {
+            this.logger.log(
+              `Reusing existing CandidateCv ${existingCv.id} (same content hash) for Application ${data.applicationId}`,
+            );
+
+            await this.dataSource.manager.update(
+              Application,
+              data.applicationId,
+              {
+                candidateCv: { id: existingCv.id },
+                status: ApplicationStatus.PARSED_SUCCESS,
+                rawData: JSON.stringify(existingCv.parsedJson),
+              },
+            );
+          } else {
+            this.logger.log(
+              `New CV detected for Candidate ${data.candidateId}. Running full parsing pipeline.`,
+            );
+
+            // text extraction
+            const pdfData = await pdfParse(pdfBuffer);
+            let rawText = pdfData.text;
+
+            // clean text optimization
+            rawText = this.cleanExtractedText(rawText);
+
+            // Integrate with LLM for parsing
+            const parsedData =
+              await this.llmProviderService.parseCvToJson(rawText);
+
+            // Create CandidateCv + EntitySkills and link to Application
+            await this.createCandidateCvAndLink(
+              data.applicationId,
+              data.candidateId,
+              data.storageKey,
+              contentHash,
+              rawText,
+              parsedData,
+            );
+          }
 
           this.logger.log(
             `Successfully processed CV for Application ID: ${data.applicationId}`,
           );
+          // Chỉ publish matching khi xử lý thành công lần đầu
+          shouldPublishMatching = true;
         },
         { retries: 3, initialDelay: 1000 },
       );
 
-      // Trigger Phase 4: Hybrid Matching
-      // Placed outside retry so a Kafka publish failure does not re-trigger
-      // the expensive MinIO → PDF → LLM pipeline.
-      await this.producerService.produce(KAFKA_TOPICS.CV_MATCHING_REQUEST, {
-        key: data.applicationId,
-        value: JSON.stringify({
-          applicationId: data.applicationId,
-          candidateId: data.candidateId,
-          jobId: data.jobId,
-        }),
-      });
-      this.logger.log(
-        `Published CV_MATCHING_REQUEST for Application ID: ${data.applicationId}`,
-      );
+      if (shouldPublishMatching) {
+        await this.producerService.produce(KAFKA_TOPICS.CV_MATCHING_REQUEST, {
+          key: data.applicationId,
+          value: JSON.stringify({
+            applicationId: data.applicationId,
+            candidateId: data.candidateId,
+            jobId: data.jobId,
+          }),
+        });
+        this.logger.log(
+          `Published CV_MATCHING_REQUEST for Application ID: ${data.applicationId}`,
+        );
+      }
     } catch (error: any) {
       this.logger.error('Failed to process CV. Sending to DLQ.', error);
 
-      // Mark application as PARSING_FAILED so HR can identify broken submissions
       if (data?.applicationId) {
         await this.dataSource.manager
           .update(Application, data.applicationId, {
@@ -137,9 +182,15 @@ export class ApplicationsConsumerController {
     }
   }
 
-  private async processAndSaveData(
+  /**
+   * Creates a new CandidateCv record with parsed skills, links it to the Application,
+   * and updates Application status to PARSED_SUCCESS — all within a single transaction.
+   */
+  private async createCandidateCvAndLink(
     applicationId: string,
     candidateId: string,
+    storageKey: string,
+    contentHash: string,
     rawText: string,
     parsedData: any,
   ) {
@@ -148,7 +199,11 @@ export class ApplicationsConsumerController {
     await queryRunner.startTransaction();
 
     try {
-      await queryRunner.manager.update(Candidate, candidateId, {
+      // Create CandidateCv
+      const candidateCv = queryRunner.manager.create(CandidateCv, {
+        candidate: { id: candidateId },
+        storageKey,
+        contentHash,
         rawCvText: rawText,
         cvEmbedding: null as any,
         summary: parsedData.summary,
@@ -156,30 +211,33 @@ export class ApplicationsConsumerController {
           education: parsedData.education,
           experience: parsedData.experience,
         },
+        parsedJson: parsedData,
+        parsingStatus: CvParsingStatus.SUCCESS,
       });
-      if (parsedData.skills && Array.isArray(parsedData.skills)) {
-        // Delete all previous EntitySkills for this candidate before re-inserting
-        // so that re-parsing the same CV always produces a deterministic skill set.
-        await queryRunner.manager.delete(EntitySkill, {
-          candidate: { id: candidateId },
-        });
+      const savedCv = await queryRunner.manager.save(candidateCv);
 
+      // Save EntitySkills linked to CandidateCv (not Candidate)
+      if (parsedData.skills && Array.isArray(parsedData.skills)) {
         for (const skillItem of parsedData.skills) {
           const skill = await queryRunner.manager.findOne(Skill, {
             where: { name: ILike(skillItem.standardizedName) },
           });
-          const canonicalName = skill?.name ?? skillItem.standardizedName ?? skillItem.originalName;
+          const canonicalName =
+            skill?.name ?? skillItem.standardizedName ?? skillItem.originalName;
 
           const newEntitySkill = queryRunner.manager.create(EntitySkill, {
-            candidate: { id: candidateId },
+            candidateCv: { id: savedCv.id },
             skill: skill ? { id: skill.id } : undefined,
-            experienceYears: skillItem.experienceYears,
+            experienceYears: Number(skillItem.experienceYears) || 0,
             standardizedName: canonicalName,
           });
           await queryRunner.manager.save(newEntitySkill);
         }
       }
+
+      // Link Application → CandidateCv and update status
       await queryRunner.manager.update(Application, applicationId, {
+        candidateCv: { id: savedCv.id },
         status: ApplicationStatus.PARSED_SUCCESS,
         rawData: JSON.stringify(parsedData),
       });

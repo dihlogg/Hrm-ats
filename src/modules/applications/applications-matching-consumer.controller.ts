@@ -13,8 +13,8 @@ import { EmbeddingService } from '../../infrastructure/llm/embedding.service';
 import { MatchingService } from '../../core-ai/matching/matching.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
 import { Application, ApplicationStatus } from './entities/application.entity';
-import { Job, SkillsExtractionStatus } from '../jobs/entities/job.entity';
-import { Candidate } from '../candidates/entities/candidate.entity';
+import { Job } from '../jobs/entities/job.entity';
+import { CandidateCv } from '../candidates/entities/candidate-cv.entity';
 
 @Controller()
 export class ApplicationsMatchingConsumerController {
@@ -43,38 +43,29 @@ export class ApplicationsMatchingConsumerController {
 
       await retry(
         async () => {
-          // load job with require skill
+          // Load job with skills (guaranteed COMPLETED since create is synchronous)
           const job = await this.dataSource.manager.findOne(Job, {
             where: { id: data.jobId },
             relations: ['entitySkills', 'entitySkills.skill'],
           });
           if (!job) throw new Error(`Job not found: ${data.jobId}`);
 
-          // Guard: JD skills must be fully extracted before matching
-          if (
-            job.skillsExtractionStatus !== SkillsExtractionStatus.COMPLETED
-          ) {
-            throw new Error(
-              `Job ${data.jobId} skills extraction not completed (status: ${job.skillsExtractionStatus}). Will retry.`,
-            );
-          }
-
-          // load candidate
-          const candidate = await this.dataSource.manager.findOne(Candidate, {
-            where: { id: data.candidateId },
-            relations: ['entitySkills', 'entitySkills.skill'],
-          });
-          if (!candidate)
-            throw new Error(`Candidate not found: ${data.candidateId}`);
-
-          // only process if application is in PARSED_SUCCESS state (idempotency guard)
+          // Load application with linked CandidateCv and its skills
           const application = await this.dataSource.manager.findOne(
             Application,
-            { where: { id: data.applicationId } },
+            {
+              where: { id: data.applicationId },
+              relations: [
+                'candidateCv',
+                'candidateCv.entitySkills',
+                'candidateCv.entitySkills.skill',
+              ],
+            },
           );
           if (!application)
             throw new Error(`Application not found: ${data.applicationId}`);
 
+          // Idempotency guard
           if (application.status !== ApplicationStatus.PARSED_SUCCESS) {
             this.logger.warn(
               `Application ${data.applicationId} is not in PARSED_SUCCESS state (current: ${application.status}). Skipping.`,
@@ -82,147 +73,103 @@ export class ApplicationsMatchingConsumerController {
             return;
           }
 
-          // build plain text for embedding (only needed if JD embedding not cached)
-          const cvText = candidate.rawCvText ?? '';
-
-          if (!cvText.trim()) {
+          const candidateCv = application.candidateCv;
+          if (!candidateCv) {
             throw new Error(
-              `Candidate ${data.candidateId} has no rawCvText for embedding`,
+              `Application ${data.applicationId} has no linked CandidateCv. Cannot match.`,
             );
           }
 
-          // Use cached JD embedding if available, otherwise generate on-the-fly (fallback for old jobs)
+          const cvText = candidateCv.rawCvText ?? '';
+          if (!cvText.trim()) {
+            throw new Error(`CandidateCv ${candidateCv.id} has no rawCvText for embedding`);
+          }
+
+          // Use cached JD embedding (always present since create is synchronous)
           let jdVector: number[];
           if (job.jdEmbedding && job.jdEmbedding.length > 0) {
             jdVector = job.jdEmbedding;
           } else {
-            const jdText = [
-              job.title,
-              job.jobTitleName,
-              job.level,
-              job.description,
-              job.requirements,
-              job.responsibilities,
-            ]
+            const jdText = [job.title, job.jobTitleName, job.level, job.description, job.requirements, job.responsibilities]
               .filter(Boolean)
               .join('\n\n');
-
-            if (!jdText.trim()) {
-              throw new Error(
-                `Job ${data.jobId} has no text content for embedding`,
-              );
-            }
+            if (!jdText.trim()) throw new Error(`Job ${data.jobId} has no text content for embedding`);
             jdVector = await this.embeddingService.generateEmbedding(jdText);
-
-            // Cache the JD embedding for future use
-            await this.dataSource.manager.update(Job, job.id, {
-              jdEmbedding: jdVector,
-            });
+            await this.dataSource.manager.update(Job, job.id, { jdEmbedding: jdVector });
           }
 
-          // Use cached CV embedding if available
+          // Use cached CV embedding
           let cvVector: number[];
-          if (candidate.cvEmbedding && candidate.cvEmbedding.length > 0) {
-            cvVector = candidate.cvEmbedding;
-            this.logger.debug(
-              `Reusing cached CV embedding for Candidate ${data.candidateId}`,
-            );
+          if (candidateCv.cvEmbedding && candidateCv.cvEmbedding.length > 0) {
+            cvVector = candidateCv.cvEmbedding;
+            this.logger.debug(`Reusing cached CV embedding for CandidateCv ${candidateCv.id}`);
           } else {
             cvVector = await this.embeddingService.generateEmbedding(cvText);
-
-            // Cache the CV embedding
-            await this.dataSource.manager.update(Candidate, candidate.id, {
-              cvEmbedding: cvVector,
-            });
+            await this.dataSource.manager.update(CandidateCv, candidateCv.id, { cvEmbedding: cvVector });
           }
 
-          // semantic similarity score
-          const semanticScore = this.embeddingService.cosineSimilarity(
-            jdVector,
-            cvVector,
-          );
+          // Semantic similarity score
+          const semanticScore = this.embeddingService.cosineSimilarity(jdVector, cvVector);
           this.logger.log(`Semantic score: ${semanticScore.toFixed(4)}`);
 
-          // skills gap analysis (3-tier: skillId → exact → fuzzy)
+          // Skills gap analysis
           const jdSkills = (job.entitySkills ?? []).map((es) => ({
             skillId: es.skill?.id,
             standardizedName: es.skill?.name ?? es.standardizedName ?? '',
-            experienceYears: es.experienceYears ?? 0,
+            experienceYears: Number(es.experienceYears) || 0,
           }));
-
-          const cvSkills = (candidate.entitySkills ?? []).map((es) => ({
+          const cvSkills = (candidateCv.entitySkills ?? []).map((es) => ({
             skillId: es.skill?.id,
             standardizedName: es.skill?.name ?? es.standardizedName ?? '',
-            experienceYears: es.experienceYears ?? 0,
+            experienceYears: Number(es.experienceYears) || 0,
           }));
 
-          const gapResult = this.matchingService.computeSkillGap(
-            jdSkills,
-            cvSkills,
-          );
-          this.logger.log(
-            `Skill gap — matched: ${gapResult.matched.length}, missing: ${gapResult.missing.length}`,
-          );
+          const gapResult = this.matchingService.computeSkillGap(jdSkills, cvSkills);
+          this.logger.log(`Skill gap — matched: ${gapResult.matched.length}, missing: ${gapResult.missing.length}`);
 
-          // experience match analysis
-          const expResult = this.matchingService.computeExperienceMatch(
-            jdSkills,
-            cvSkills,
-          );
+          const expResult = this.matchingService.computeExperienceMatch(jdSkills, cvSkills);
           this.logger.log(`Experience status: ${expResult.status}`);
 
-          // composite score
-          const { matchScore, breakdown } =
-            this.matchingService.computeCompositeScore(
-              semanticScore,
-              gapResult.skillScore,
-              expResult.score,
-            );
-          this.logger.log(
-            `Composite score: ${matchScore} | breakdown: ${JSON.stringify(breakdown)}`,
+          const { matchScore, breakdown } = this.matchingService.computeCompositeScore(
+            semanticScore,
+            gapResult.skillScore,
+            expResult.score,
           );
+          this.logger.log(`Composite score: ${matchScore} | breakdown: ${JSON.stringify(breakdown)}`);
 
-          // generate match reason via LLM
-          const matchReason = await this.llmProviderService.generateMatchReason(
-            {
-              jobTitle: job.jobTitleName ?? job.title ?? '',
-              jobLevel: job.level ?? '',
-              jobRequirements: job.requirements ?? '',
-              candidateSummary: candidate.summary ?? '',
-              matchScore,
-              skillMatchPercent: gapResult.skillMatchPercent,
-              experienceMatchStatus: expResult.status,
-              experienceRatio: expResult.requiredYears > 0
-                ? expResult.candidateYears / expResult.requiredYears
-                : 0,
-              candidateYears: expResult.candidateYears,
-              requiredYears: expResult.requiredYears,
-              matchedSkills: gapResult.matched,
-              missingSkills: gapResult.missing,
-            },
-          );
+          // Generate match reason via LLM
+          const matchReason = await this.llmProviderService.generateMatchReason({
+            jobTitle: job.jobTitleName ?? job.title ?? '',
+            jobLevel: job.level ?? '',
+            jobRequirements: job.requirements ?? '',
+            candidateSummary: candidateCv.summary ?? '',
+            matchScore,
+            skillMatchPercent: gapResult.skillMatchPercent,
+            experienceMatchStatus: expResult.status,
+            experienceRatio: expResult.requiredYears > 0 ? expResult.candidateYears / expResult.requiredYears : 0,
+            candidateYears: expResult.candidateYears,
+            requiredYears: expResult.requiredYears,
+            matchedSkills: gapResult.matched,
+            missingSkills: gapResult.missing,
+          });
 
-          // persist match results to DB
-          this.logger.log(
-            `Saving match results for Application ${data.applicationId}`,
-          );
-          await this.dataSource.manager.update(
-            Application,
-            data.applicationId,
-            {
+          // Persist match results
+          await this.dataSource.manager.update(Application, data.applicationId, {
             status: ApplicationStatus.MATCHED,
-              matchScore,
-              skillMatchPercent: gapResult.skillMatchPercent,
-              experienceMatchStatus: expResult.status,
-              matchReason,
-            },
-          );
+            matchScore,
+            skillMatchPercent: gapResult.skillMatchPercent,
+            experienceMatchStatus: expResult.status,
+            matchReason,
+          });
 
-          this.logger.log(
-            `Successfully matched Application ${data.applicationId} — score: ${matchScore}`,
-          );
+          this.logger.log(`Successfully matched Application ${data.applicationId} — score: ${matchScore}`);
         },
-        { retries: 3, initialDelay: 1000 },
+        {
+          retries: 3,
+          initialDelay: 1000,
+          onRetry: (error, attempt) =>
+            this.logger.warn(`[Retry ${attempt}/3] Application ${data.applicationId} — ${error.message}`),
+        },
       );
     } catch (error: any) {
       this.logger.error(
@@ -230,7 +177,6 @@ export class ApplicationsMatchingConsumerController {
         error,
       );
 
-      // Mark application as MATCHING_FAILED so HR can identify broken matches
       if (data?.applicationId) {
         await this.dataSource.manager
           .update(Application, data.applicationId, {
