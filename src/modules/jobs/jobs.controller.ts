@@ -18,7 +18,7 @@ import { GetJobListDto } from './dto/get-job-list.dto';
 @ApiTags('Jobs')
 @Controller('jobs')
 export class JobsController {
-  constructor(private readonly jobsService: JobsService) {}
+  constructor(private readonly jobsService: JobsService) { }
 
   //get all jobs
   @Get('GetAllJobs')

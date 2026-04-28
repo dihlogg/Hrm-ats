@@ -2,11 +2,11 @@ import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { Skill } from '../../skills/entities/skill.entity';
 import { BaseEntities } from '../../../common/entities/base.entity';
 import { Job } from '../../jobs/entities/job.entity';
-import { Candidate } from '../../candidates/entities/candidate.entity';
+import { CandidateCv } from '../../candidates/entities/candidate-cv.entity';
 
 @Entity('EntitySkills')
 export class EntitySkill extends BaseEntities {
-  @ManyToOne(() => Skill, (skill) => skill.entitySkills, { nullable: true})
+  @ManyToOne(() => Skill, (skill) => skill.entitySkills, { nullable: true })
   @JoinColumn({ name: 'skillId' })
   skill: Skill;
 
@@ -14,13 +14,11 @@ export class EntitySkill extends BaseEntities {
   @JoinColumn({ name: 'jobId' })
   job: Job;
 
-  @ManyToOne(() => Candidate, (candidate) => candidate.entitySkills, {
-    nullable: true,
-  })
-  @JoinColumn({ name: 'candidateId' })
-  candidate: Candidate;
+  @ManyToOne(() => CandidateCv, (cv) => cv.entitySkills, { nullable: true })
+  @JoinColumn({ name: 'candidateCvId' })
+  candidateCv: CandidateCv;
 
-  @Column('int', { nullable: true })
+  @Column('decimal', { precision: 4, scale: 1, nullable: true })
   experienceYears: number;
 
   @Column({ nullable: true })

@@ -7,6 +7,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Application } from './entities/application.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Candidate } from '../candidates/entities/candidate.entity';
+import { CandidateCv } from '../candidates/entities/candidate-cv.entity';
 import { Skill } from '../skills/entities/skill.entity';
 import { EntitySkill } from '../entity-skills/entities/entity-skill.entity';
 import { MinioModule } from '../../infrastructure/minio/minio.module';
@@ -16,7 +17,14 @@ import { MatchingModule } from '../../core-ai/matching/matching.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Application, Job, Candidate, Skill, EntitySkill]),
+    TypeOrmModule.forFeature([
+      Application,
+      Job,
+      Candidate,
+      CandidateCv,
+      Skill,
+      EntitySkill,
+    ]),
     MinioModule,
     KafkaModule,
     LlmModule,

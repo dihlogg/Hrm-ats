@@ -1,6 +1,7 @@
 import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntities } from '../../../common/entities/base.entity';
 import { Candidate } from '../../candidates/entities/candidate.entity';
+import { CandidateCv } from '../../candidates/entities/candidate-cv.entity';
 import { Job } from '../../jobs/entities/job.entity';
 
 export enum ApplicationStatus {
@@ -20,6 +21,10 @@ export class Application extends BaseEntities {
   @ManyToOne(() => Candidate, (candidate) => candidate.applications)
   @JoinColumn({ name: 'candidateId' })
   candidate: Candidate;
+
+  @ManyToOne(() => CandidateCv, { nullable: true })
+  @JoinColumn({ name: 'candidateCvId' })
+  candidateCv: CandidateCv;
 
   @Column({ type: 'varchar', default: ApplicationStatus.PARSING })
   status: ApplicationStatus;
