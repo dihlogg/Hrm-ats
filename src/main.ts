@@ -13,6 +13,7 @@ async function bootstrap() {
     credentials: true,
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
+  app.enableShutdownHooks();
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,

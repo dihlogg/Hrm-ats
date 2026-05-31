@@ -13,6 +13,7 @@ import { DlqService } from '../../kafka/dlq/dlq-handler.service';
 import { MinioService } from '../../infrastructure/minio/minio.service';
 import { LlmProviderService } from '../../infrastructure/llm/llm-provider.service';
 import { ProducerService } from '../../kafka/producers/producer.service';
+import { DateRangeParserService } from '../../core-ai/nlp/date-range-parser.service';
 import { Application, ApplicationStatus } from './entities/application.entity';
 import { CandidateCv, CvParsingStatus } from '../candidates/entities/candidate-cv.entity';
 import { ILike } from 'typeorm';
@@ -32,6 +33,7 @@ export class ApplicationsConsumerController {
     private readonly llmProviderService: LlmProviderService,
     private readonly producerService: ProducerService,
     private readonly dataSource: DataSource,
+    private readonly dateRangeParser: DateRangeParserService,
   ) { }
 
   // Clean (Token Optimization) function
@@ -129,6 +131,18 @@ export class ApplicationsConsumerController {
             const parsedData =
               await this.llmProviderService.parseCvToJson(rawText);
 
+            // Post-process: calculate exact experienceYears from work timeline
+            // LLM returns skills[].usedAtCompanies — code calculates years deterministically
+            const timeline = this.dateRangeParser.buildTimeline(
+              parsedData.experience ?? [],
+            );
+            parsedData.skills = (parsedData.skills ?? []).map((skill: any) => ({
+              ...skill,
+              experienceYears: this.dateRangeParser.calculateExperienceYears(
+                skill.usedAtCompanies ?? [],
+                timeline,
+              ),
+            }));
             // Create CandidateCv + EntitySkills and link to Application
             await this.createCandidateCvAndLink(
               data.applicationId,

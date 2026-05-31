@@ -95,13 +95,18 @@ export class LlmProviderService {
                     properties: {
                       originalName: { type: Type.STRING },
                       standardizedName: { type: Type.STRING },
-                      experienceYears: { type: Type.INTEGER },
+                      // usedAtCompanies: list of company names where this skill was used.
+                      // experienceYears is NOT returned by LLM — calculated by DateRangeParserService.
+                      usedAtCompanies: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                      },
                       category: { type: Type.STRING },
                     },
                     required: [
                       'originalName',
                       'standardizedName',
-                      'experienceYears',
+                      'usedAtCompanies',
                       'category',
                     ],
                   },
