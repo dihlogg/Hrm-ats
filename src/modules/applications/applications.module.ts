@@ -14,6 +14,7 @@ import { MinioModule } from '../../infrastructure/minio/minio.module';
 import { KafkaModule } from '../../kafka/kafka.module';
 import { LlmModule } from '../../infrastructure/llm/llm.module';
 import { MatchingModule } from '../../core-ai/matching/matching.module';
+import { NlpModule } from '../../core-ai/nlp/nlp.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { MatchingModule } from '../../core-ai/matching/matching.module';
     KafkaModule,
     LlmModule,
     MatchingModule,
+    NlpModule,
   ],
   controllers: [
     ApplicationsController,
