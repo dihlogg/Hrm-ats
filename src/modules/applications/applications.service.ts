@@ -140,11 +140,75 @@ export class ApplicationsService {
       qb.andWhere('app.matchScore >= :minScore', { minScore });
     }
 
-    return paginateAndFormat(qb, {
+    const result = await paginateAndFormat(qb, {
       page: Number(page),
       pageSize: Number(pageSize),
       useQueryBuilder: true,
       queryBuilder: qb,
     });
+
+    result.data = result.data.map((app) => {
+      if (app.candidate && app.candidateCv) {
+        app.candidate.storageKey = app.candidateCv.storageKey;
+      }
+      return app;
+    });
+
+    return result;
+  }
+
+  async hireCandidate(applicationId: string) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const application = await queryRunner.manager.findOne(Application, {
+        where: { id: applicationId },
+        relations: ['candidate', 'job'],
+      });
+
+      if (!application) {
+        throw new NotFoundException('Application not found');
+      }
+
+      if (application.status === ApplicationStatus.HIRED) {
+        throw new BadRequestException('Candidate is already hired for this application');
+      }
+
+      application.status = ApplicationStatus.HIRED;
+      await queryRunner.manager.save(application);
+
+      await queryRunner.commitTransaction();
+
+      const candidate = application.candidate;
+      const job = application.job;
+
+      const nameParts = candidate.fullName.trim().split(/\s+/);
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : firstName;
+
+      await this.producerService.produce(KAFKA_TOPICS.CANDIDATE_HIRED, {
+        key: application.id,
+        value: JSON.stringify({
+          applicationId: application.id,
+          candidateId: candidate.id,
+          firstName,
+          lastName,
+          email: candidate.email,
+          phoneNumber: candidate.phoneNumber,
+          jobTitleId: job.jobTitleId,
+          subUnitId: job.subUnitId,
+        }),
+      });
+
+      return application;
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      if (error instanceof HttpException) throw error;
+      throw new InternalServerErrorException('Hire failed: ' + error.message);
+    } finally {
+      await queryRunner.release();
+    }
   }
 }

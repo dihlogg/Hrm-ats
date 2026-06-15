@@ -10,6 +10,7 @@ export enum ApplicationStatus {
   PARSING_FAILED = 'PARSING_FAILED',
   MATCHED = 'MATCHED',
   MATCHING_FAILED = 'MATCHING_FAILED',
+  HIRED = 'HIRED',
 }
 
 @Entity('Applications')

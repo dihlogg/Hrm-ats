@@ -47,4 +47,10 @@ export class ApplicationsController {
   ) {
     return this.applicationsService.getApplicationsByJob(jobId, query);
   }
+  @Post(':id/hire')
+  @ApiOperation({ summary: 'Hire a candidate' })
+  @ApiParam({ name: 'id', type: 'string', description: 'UUID of the application' })
+  async hireCandidate(@Param('id') id: string) {
+    return this.applicationsService.hireCandidate(id);
+  }
 }
