@@ -17,6 +17,8 @@ export class Candidate extends BaseEntities {
   @Column({ nullable: true })
   profileUrl: string;
 
+  storageKey?: string;
+
   @OneToMany(() => Application, (application) => application.candidate)
   applications: Application[];
 
