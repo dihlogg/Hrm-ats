@@ -64,4 +64,9 @@ export class JobsController {
   async getJobList(@Query() query: GetJobListDto) {
     return await this.jobsService.getJobList(query);
   }
+
+  @Get('stats/status')
+  async getJobStatsByStatus() {
+    return await this.jobsService.getJobStatsByStatus();
+  }
 }

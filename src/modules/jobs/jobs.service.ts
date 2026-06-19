@@ -226,4 +226,14 @@ export class JobsService {
 
     return query.orderBy(sortFieldMap[dto.sortBy], dto.sortOrder);
   }
+
+  async getJobStatsByStatus() {
+    return await this.dataSource
+      .getRepository(Job)
+      .createQueryBuilder('job')
+      .select('job.status', 'status')
+      .addSelect('COUNT(job.id)', 'count')
+      .groupBy('job.status')
+      .getRawMany();
+  }
 }

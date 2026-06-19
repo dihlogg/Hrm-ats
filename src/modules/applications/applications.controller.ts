@@ -47,6 +47,12 @@ export class ApplicationsController {
   ) {
     return this.applicationsService.getApplicationsByJob(jobId, query);
   }
+  @Get('stats/funnel')
+  @ApiOperation({ summary: 'Get application counts grouped by status for recruitment funnel' })
+  async getApplicationStatsByStatus() {
+    return this.applicationsService.getApplicationStatsByStatus();
+  }
+
   @Post(':id/hire')
   @ApiOperation({ summary: 'Hire a candidate' })
   @ApiParam({ name: 'id', type: 'string', description: 'UUID of the application' })
