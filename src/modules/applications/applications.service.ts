@@ -211,4 +211,14 @@ export class ApplicationsService {
       await queryRunner.release();
     }
   }
+
+  async getApplicationStatsByStatus() {
+    return await this.dataSource
+      .getRepository(Application)
+      .createQueryBuilder('app')
+      .select('app.status', 'status')
+      .addSelect('COUNT(app.id)', 'count')
+      .groupBy('app.status')
+      .getRawMany();
+  }
 }
