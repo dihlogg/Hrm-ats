@@ -48,6 +48,10 @@ export class ApplicationsService {
         throw new NotFoundException('Job not found');
       }
 
+      if (job.toDate && new Date() > new Date(job.toDate)) {
+        throw new BadRequestException('Job has expired and is no longer accepting applications');
+      }
+
       // Verify CV file exists on MinIO before proceeding
       const fileExists = await this.minioService.fileExists(dto.storageKey);
       if (!fileExists) {
