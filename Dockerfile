@@ -1,6 +1,6 @@
 #Step 1: Build
 # Sử dụng Node.js image chính thức làm base image
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Thiết lập thư mục làm việc trong container
 WORKDIR /app
@@ -20,7 +20,7 @@ RUN npm run build
 
 #Step 2: RUN
 # Tạo image production
-FROM node:18-alpine AS production
+FROM node:22-alpine AS production
 
 # Thiết lập thư mục làm việc
 WORKDIR /app
