@@ -36,6 +36,8 @@ export class MinioService {
         secretAccessKey,
       },
       forcePathStyle: true,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
 
     // Public S3Client (for presigned URL generation - with correct public host)
@@ -47,6 +49,8 @@ export class MinioService {
         secretAccessKey,
       },
       forcePathStyle: true,
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
