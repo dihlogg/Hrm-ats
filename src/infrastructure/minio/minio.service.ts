@@ -52,7 +52,10 @@ export class MinioService {
 
     const url = await getSignedUrl(this.s3Client, command, { expiresIn: 900 });
 
-    return { url, storageKey };
+    // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
+    const publicUrl = url.replace('http://minio:9000', 'https://api.ltdhrm.me/s3-minio');
+
+    return { url: publicUrl, storageKey };
   }
 
   async generateDownloadPresignedUrl(
@@ -66,7 +69,10 @@ export class MinioService {
 
     const url = await getSignedUrl(this.s3Client, command, { expiresIn });
 
-    return { url };
+    // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
+    const publicUrl = url.replace('http://minio:9000', 'https://api.ltdhrm.me/s3-minio');
+
+    return { url: publicUrl };
   }
 
   async fileExists(storageKey: string): Promise<boolean> {
