@@ -54,7 +54,7 @@ export class MinioService {
 
     // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
     const endpoint = process.env.MINIO_ENDPOINT || 'http://minio:9000';
-    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me/s3-minio');
+    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me');
 
     return { url: publicUrl, storageKey };
   }
@@ -72,7 +72,7 @@ export class MinioService {
 
     // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
     const endpoint = process.env.MINIO_ENDPOINT || 'http://minio:9000';
-    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me/s3-minio');
+    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me');
 
     return { url: publicUrl };
   }
