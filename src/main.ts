@@ -37,6 +37,7 @@ async function bootstrap() {
     .setVersion('1.0')
     .addTag('Hrm Tool')
     .addBearerAuth()
+    .addServer('/hrm-ats')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
