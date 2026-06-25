@@ -11,7 +11,8 @@ import { v4 as uuidv4 } from 'uuid';
 @Injectable()
 export class MinioService {
   private readonly logger = new Logger(MinioService.name);
-  private readonly s3Client: S3Client;
+  private readonly s3Client: S3Client;        // Internal (Docker network)
+  private readonly s3PublicClient: S3Client;  // Public (presigned URLs)
   private readonly bucketName = process.env.MINIO_BUCKET_NAME || 'hrm-ats';
 
   constructor() {
@@ -26,9 +27,21 @@ export class MinioService {
       );
     }
 
+    // Internal S3Client (for operations within Docker network)
     this.s3Client = new S3Client({
       region: process.env.AWS_REGION || 'us-east-1',
       endpoint: process.env.MINIO_ENDPOINT,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+      forcePathStyle: true,
+    });
+
+    // Public S3Client (for presigned URL generation - with correct public host)
+    this.s3PublicClient = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+      endpoint: process.env.MINIO_PUBLIC_ENDPOINT || 'https://api.ltdhrm.me',
       credentials: {
         accessKeyId,
         secretAccessKey,
@@ -50,13 +63,11 @@ export class MinioService {
       ContentType: contentType,
     });
 
-    const url = await getSignedUrl(this.s3Client, command, { expiresIn: 900 });
+    // Use PUBLIC S3Client for presigned URL generation
+    // Signature will be valid for https://api.ltdhrm.me
+    const url = await getSignedUrl(this.s3PublicClient, command, { expiresIn: 900 });
 
-    // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
-    const endpoint = process.env.MINIO_ENDPOINT || 'http://minio:9000';
-    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me');
-
-    return { url: publicUrl, storageKey };
+    return { url, storageKey };
   }
 
   async generateDownloadPresignedUrl(
@@ -68,17 +79,15 @@ export class MinioService {
       Key: storageKey,
     });
 
-    const url = await getSignedUrl(this.s3Client, command, { expiresIn });
+    // Use PUBLIC S3Client for presigned URL generation
+    const url = await getSignedUrl(this.s3PublicClient, command, { expiresIn });
 
-    // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
-    const endpoint = process.env.MINIO_ENDPOINT || 'http://minio:9000';
-    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me');
-
-    return { url: publicUrl };
+    return { url };
   }
 
   async fileExists(storageKey: string): Promise<boolean> {
     try {
+      // Use INTERNAL S3Client for file operations (Docker network)
       await this.s3Client.send(
         new HeadObjectCommand({
           Bucket: this.bucketName,
@@ -98,6 +107,7 @@ export class MinioService {
   }
 
   async getFileBuffer(storageKey: string): Promise<Buffer> {
+    // Use INTERNAL S3Client for file operations (Docker network)
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: storageKey,
