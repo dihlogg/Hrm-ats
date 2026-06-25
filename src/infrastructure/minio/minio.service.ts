@@ -53,7 +53,8 @@ export class MinioService {
     const url = await getSignedUrl(this.s3Client, command, { expiresIn: 900 });
 
     // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
-    const publicUrl = url.replace('http://minio:9000', 'https://api.ltdhrm.me/s3-minio');
+    const endpoint = process.env.MINIO_ENDPOINT || 'http://minio:9000';
+    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me/s3-minio');
 
     return { url: publicUrl, storageKey };
   }
@@ -70,7 +71,8 @@ export class MinioService {
     const url = await getSignedUrl(this.s3Client, command, { expiresIn });
 
     // Thay thế internal URL bằng Gateway URL hỗ trợ HTTPS để tránh lỗi Mixed Content cho Frontend
-    const publicUrl = url.replace('http://minio:9000', 'https://api.ltdhrm.me/s3-minio');
+    const endpoint = process.env.MINIO_ENDPOINT || 'http://minio:9000';
+    const publicUrl = url.replace(endpoint, 'https://api.ltdhrm.me/s3-minio');
 
     return { url: publicUrl };
   }
